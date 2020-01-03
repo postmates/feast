@@ -3,14 +3,14 @@ local flags = import "flags.libsonnet";
 local pmk = import "pmk.libsonnet";
 local environment = import "environment.libsonnet";
 local rbac = import "rbac.libsonnet";
-local cfg_data = import "feast-core-configmap.libsonnet";
+local core_cfg_data = import "feast-core-configmap.libsonnet";
+local serving_cfg_data = import "feast-serving-configmap.libsonnet";
 
 {
   name: "feast",
   namespace: "team-data",
   local env_values = environment.base_env($.secrets_env),
   local tag = "v%s" % pmk.thisCommit[0:8],
-
   local clf = "[%%(blue)s%%(asctime)s%%(reset)s] {{%%(blue)s%%(filename)s:%%(reset)s%%(lineno)d}} %%(log_color)s%%(levelname)s%%(reset)s - %%(log_color)s%%(message)s%%(reset)s",
   local lf = "[%%(asctime)s] {{%%(filename)s:%%(lineno)d}} %%(levelname)s - %%(message)s",
   local slf = "%%(asctime)s %%(levelname)s - %%(message)s",
@@ -18,11 +18,14 @@ local cfg_data = import "feast-core-configmap.libsonnet";
   local lpft = "{{ filename }}.log",
   local lit = "{{dag_id}}-{{task_id}}-{{execution_date}}-{{try_number}}",
   local feast_core_configmap = pmk.renderJinja2(
-    cfg_data.data,
+    core_cfg_data.data,
     env_values + {metadata: {tag: tag, release: $.name}} + {cfg: {clf: clf, lf: lf, slf: slf, lft: lft, lpft: lpft, lit: lit}}),
-
+  local feast_serving_configmap = pmk.renderJinja2(
+    serving_cfg_data.data,
+    env_values + {metadata: {tag: tag, release: $.name}} + {cfg: {clf: clf, lf: lf, slf: slf, lft: lft, lpft: lpft, lit: lit}}),
   manifests: [
     pmk.k8s.configMap("feast-core-configmap", {data: {"application.yaml": feast_core_configmap}}),
+    pmk.k8s.configMap("feast-serving-configmap", {data: {"application.yaml": feast_serving_configmap}}),
   ] + self.values.manifests + rbac + [environment.network_policies(env_values.network.policies)],
   local name_prefix(t) = "%s-%s" % [self.name, t],
   local full_image() = "%s:%s" % [self.values.image, self.values.tag],
@@ -48,11 +51,12 @@ local cfg_data = import "feast-core-configmap.libsonnet";
 
     manifests: [
       pmk.k8s.configMap(name_prefix("core-env"), {data: core_environment}),
-      pmk.k8s.configMap(name_prefix("worker-env"), {data: worker_environment}),
       pmk.k8s.secret(name_prefix("secrets"), {data: secrets}),
       pmk.k8s.secret(name_prefix("gcloud-secret"), {data: flow3_secret_mounts}),
       feast_core_deployment,
-      //flow3_service,
+      feast_core_service,
+      feast_batch_deployment,
+      feast_batch_service,
       //flow3_webserver,
       //ingress,
     ],
@@ -95,10 +99,10 @@ local cfg_data = import "feast-core-configmap.libsonnet";
     name: name_prefix("core"),
     image: "gcr.io/kf-feast/feast-core:0.3.2",
     volumeMounts: [
-      { name: name_prefix("core-config"),
+      { name: name_prefix("feast-core-config"),
         mountPath: "/etc/feast/feast-serving",
       },
-      { name: name_prefix("core-gcpserviceaccount"),
+      { name: name_prefix("feast-core-gcpserviceaccount"),
         mountPath: "/etc/gcloud/service-accounts",
         readOnly: true },
     ],
@@ -130,6 +134,46 @@ local cfg_data = import "feast-core-configmap.libsonnet";
     ],
   },
 
+  local batch_container = {
+    name: name_prefix("core"),
+    image: "gcr.io/kf-feast/feast-serving:0.3.2",
+    volumeMounts: [
+      { name: name_prefix("feast-serving-batch-config"),
+        mountPath: "/etc/feast/feast-serving",
+      },
+      { name: name_prefix("feast-serving-batch-gcpserviceaccount"),
+        mountPath: "/etc/gcloud/service-accounts",
+        readOnly: true },
+    ],
+    ports: [
+      {
+        containerPort: 8080,
+        name: "http",
+      },
+      {
+        containerPort: 6565,
+        name: "grpc",
+      },
+    ],
+    resources: $.values.resources.core,
+    command: [
+      "java",
+      "-Xms1024m",
+      "-Xmx1024m",
+      "-jar",
+      "/opt/feast/feast-core.jar",
+      "--spring.config.location=file:/etc/feast/feast-core/application.yaml"
+    ],
+    envFrom: [
+      {
+        configMapRef: {
+          name: name_prefix("serving-configmap")
+        }
+      }
+    ],
+  },
+
+
   local feast_core_deployment = {
     kind: "Deployment",
     apiVersion: "apps/v1beta1",
@@ -138,11 +182,11 @@ local cfg_data = import "feast-core-configmap.libsonnet";
         app: name_prefix("core"),
         component: "core",
       }
-    }
+    },
     metadata: {
       name: name_prefix("core"),
       labels: {
-        app: name_prefix("core")
+        app: name_prefix("core"),
         component: "core",
         release: $.name,
       },
@@ -151,13 +195,12 @@ local cfg_data = import "feast-core-configmap.libsonnet";
       replicas: $.values.replicas,
       template: {
         metadata: {
-          labels: feast_core.metadata.labels,
+          labels: feast_core_service.metadata.labels,
           annotations: {
             "checksum/secret": pmk.sha256(feast_core_configmap),
           },
         },
         spec: {
-          serviceAccountName: "flow3-k8s-executor-team-data",
           terminationGracePeriodSeconds: 30,
           imagePullSecrets: env_values.k8s.pull_secrets,
           containers: [
@@ -171,7 +214,7 @@ local cfg_data = import "feast-core-configmap.libsonnet";
             },
             { name: name_prefix("feast-core-gcpserviceaccount"),
               secret: {
-                secretName: name_prefix("feast-gcpserviceaccount"),
+                secretName: name_prefix("feast-gcp-service-account"),
               },
             },
           ],
@@ -180,21 +223,73 @@ local cfg_data = import "feast-core-configmap.libsonnet";
     },
   },
 
-  local feast_core = {
+  local feast_batch_deployment = {
+    kind: "Deployment",
+    apiVersion: "apps/v1beta1",
+    selector: {
+      matchLabels: {
+        app: name_prefix("serving-batch"),
+        component: "serving",
+      }
+    },
+    metadata: {
+      name: name_prefix("serving-batch"),
+      labels: {
+        app: name_prefix("serving-batch"),
+        component: "serving",
+        release: $.name,
+      },
+    },
+    spec: {
+      replicas: $.values.replicas,
+      template: {
+        metadata: {
+          labels: feast_batch_service.metadata.labels,
+          annotations: {
+            "prometheus.io/scrape": "false",
+            "prometheus.io/path": "/admin/metrics",
+            "prometheus.io/port": 8081,
+          },
+        },
+        spec: {
+          terminationGracePeriodSeconds: 30,
+          imagePullSecrets: env_values.k8s.pull_secrets,
+          containers: [
+            batch_container,
+          ],
+          volumes: [
+            { name: name_prefix("feast-serving-batch-config"),
+              configMap: {
+                name: name_prefix("feast-serving-batch"),
+              },
+            },
+            { name: name_prefix("feast-serving-batch-gcpserviceaccount"),
+              secret: {
+                secretName: name_prefix("feast-gcp-service-account"),
+              },
+            },
+          ],
+        },
+      },
+    },
+  },
+
+
+  local feast_core_service = {
 
     kind: "Service",
     apiVersion: "v1",
     metadata: {
       name: $.name,
       labels: {
-        app: name_prefix("core")
+        app: name_prefix("core"),
         release: $.name,
+      }
     },
     spec: {
       ports: [
         { port: 80, name: "http", targetPort: 8080},
         { port: 6565, name: "grpc", targetPort: 6565},
-        { protocol: "TCP", name: "prometheus", port: 9393 },
       ],
       selector: {
         matchLabels: {
@@ -202,32 +297,35 @@ local cfg_data = import "feast-core-configmap.libsonnet";
           component: "core",
           release: $.name
         }
-      }
+      },
       type: "ClusterIP",
     },
   },
 
-  local flow3_service = {
+  local feast_batch_service = {
 
     kind: "Service",
     apiVersion: "v1",
     metadata: {
-      name: name_prefix("web-airflow"),
-      labels: $.values.common_labels,
-      annotations: {
-          "prometheus.io/scrape": "false",
-          "prometheus.io/path": "/admin/metrics",
-          "prometheus.io/port": 8081,
-      },
+      name: $.name,
+      labels: {
+        app: name_prefix("serving-batch"),
+        release: $.name,
+      }
     },
     spec: {
       ports: [
-        { port: 80, name: "http", targetPort: 8081, protocol: "TCP" },
-        { protocol: "TCP", name: "prometheus", port: 9393 },
+        { port: 80, name: "http", targetPort: 8080},
+        { port: 6565, name: "grpc", targetPort: 6565},
       ],
-      selector: $.values.common_labels,
+      selector: {
+        matchLabels: {
+          app: name_prefix("serving-batch"),
+          component: "serving",
+          release: $.name
+        }
+      },
       type: "ClusterIP",
-      clusterIP: "None",
     },
   },
 
@@ -236,10 +334,6 @@ local cfg_data = import "feast-core-configmap.libsonnet";
     SPRING_DATASOURCE_USERNAME: feast.springDatasourceUsername,
     SPRING_DATASOURCE_PASSWORD: feast.springDatasourcePassword,
     GOOGLE_APPLICATION_CREDENTIALS: feast.googleApplicationCredentials,
-  },
-
-  local worker_environment = {
-    AIRFLOW_HOME: flow3.airflowHome,
   },
 
   local secrets = {
