@@ -4,43 +4,46 @@ local pmk = import "pmk.libsonnet";
 local environment = import "environment.libsonnet";
 local rbac = import "rbac.libsonnet";
 local core_cfg_data = import "feast-core-configmap.libsonnet";
-local serving_cfg_data = import "feast-serving-configmap.libsonnet";
+local serving_batch_cfg_data = import "feast-serving-batch-configmap.libsonnet";
+local serving_online_cfg_data = import "feast-serving-online-configmap.libsonnet";
+local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.libsonnet";
 
 {
-  name: "feast",
+  name: "pmfeast",
   namespace: "team-data",
   local env_values = environment.base_env($.secrets_env),
   local tag = "v%s" % pmk.thisCommit[0:8],
-  local clf = "[%%(blue)s%%(asctime)s%%(reset)s] {{%%(blue)s%%(filename)s:%%(reset)s%%(lineno)d}} %%(log_color)s%%(levelname)s%%(reset)s - %%(log_color)s%%(message)s%%(reset)s",
-  local lf = "[%%(asctime)s] {{%%(filename)s:%%(lineno)d}} %%(levelname)s - %%(message)s",
-  local slf = "%%(asctime)s %%(levelname)s - %%(message)s",
-  local lft = '{{ ti.dag_id }}/{{ ti.task_id }}/{{ execution_date.strftime("%%Y-%%m-%%dT%%H:%%M:%%S") }}/{{ try_number }}.log',
-  local lpft = "{{ filename }}.log",
-  local lit = "{{dag_id}}-{{task_id}}-{{execution_date}}-{{try_number}}",
   local feast_core_configmap = pmk.renderJinja2(
     core_cfg_data.data,
-    env_values + {metadata: {tag: tag, release: $.name}} + {cfg: {clf: clf, lf: lf, slf: slf, lft: lft, lpft: lpft, lit: lit}}),
-  local feast_serving_configmap = pmk.renderJinja2(
-    serving_cfg_data.data,
-    env_values + {metadata: {tag: tag, release: $.name}} + {cfg: {clf: clf, lf: lf, slf: slf, lft: lft, lpft: lpft, lit: lit}}),
+    env_values + {metadata: {tag: tag, release: $.name}}),
+  local feast_serving_batch_configmap = pmk.renderJinja2(
+    serving_batch_cfg_data.data,
+    env_values + {metadata: {tag: tag, release: $.name}}),
+  local feast_serving_online_configmap = pmk.renderJinja2(
+    serving_online_cfg_data.data,
+    env_values + {metadata: {tag: tag, release: $.name}}),
+  local prometheus_statsd_exporter_configmap = pmk.renderJinja2(
+    prometheus_statsd_cfg_data.data,
+    env_values + {metadata: {tag: tag, release: $.name}}),
   manifests: [
     pmk.k8s.configMap("feast-core-configmap", {data: {"application.yaml": feast_core_configmap}}),
-    pmk.k8s.configMap("feast-serving-configmap", {data: {"application.yaml": feast_serving_configmap}}),
-  ] + self.values.manifests + rbac + [environment.network_policies(env_values.network.policies)],
+    pmk.k8s.configMap("feast-serving-batch-configmap", {data: {"application.yaml": feast_serving_batch_configmap}}),
+    pmk.k8s.configMap("feast-serving-online-configmap", {data: {"application.yaml": feast_serving_online_configmap}}),
+    pmk.k8s.configMap("feast-prometheus-statsd-exporter", {data: {"application.yaml": prometheus_statsd_exporter_configmap}}),
+  ] + self.values.manifests,
   local name_prefix(t) = "%s-%s" % [self.name, t],
-  local full_image() = "%s:%s" % [self.values.image, self.values.tag],
   local pmk_b64(secret, env) = std.base64(pmk.secret(secret, env)),
   local feast = env_values.env,
-  local etl_connection_string(user, password, host, port, db) = std.base64("postgresql://%s:%s@%s:%s/%s" % [user, password, host, port, db]),
 
   values: {
 
-    image:: "gcr.io/pm-registry/flow3",
+    image:: "gcr.io/kf-feast/",
     tag:: tag,
     service_type:: "ClusterIP",
     common_labels: {
       app: $.name,
     },
+    pvcStorageClass: "",
 
     externalHostname:: "%s.%s" % [$.name, $.Cluster.internal_domain],
     externalURL:: "http://%s" % self.externalHostname,
@@ -52,13 +55,19 @@ local serving_cfg_data = import "feast-serving-configmap.libsonnet";
     manifests: [
       pmk.k8s.configMap(name_prefix("core-env"), {data: core_environment}),
       pmk.k8s.secret(name_prefix("secrets"), {data: secrets}),
+      pmk.k8s.secret(name_prefix("postgresql"), {data: pg_secrets}),
       pmk.k8s.secret(name_prefix("gcloud-secret"), {data: flow3_secret_mounts}),
       feast_core_deployment,
       feast_core_service,
       feast_batch_deployment,
       feast_batch_service,
-      //flow3_webserver,
-      //ingress,
+      prometheus_statsd_deployment,
+      prometheus_statsd_service,
+      prometheus_statsd_pvc,
+      postgresql_headless_service,
+      postgresql_service,
+      #feast_online_deployment,
+      #feast_online_service,
     ],
   },
 
@@ -135,7 +144,7 @@ local serving_cfg_data = import "feast-serving-configmap.libsonnet";
   },
 
   local batch_container = {
-    name: name_prefix("core"),
+    name: name_prefix("serving-batch"),
     image: "gcr.io/kf-feast/feast-serving:0.3.2",
     volumeMounts: [
       { name: name_prefix("feast-serving-batch-config"),
@@ -161,18 +170,112 @@ local serving_cfg_data = import "feast-serving-configmap.libsonnet";
       "-Xms1024m",
       "-Xmx1024m",
       "-jar",
-      "/opt/feast/feast-core.jar",
-      "--spring.config.location=file:/etc/feast/feast-core/application.yaml"
+      "/opt/feast/feast-serving.jar",
+      "--spring.config.location=file:/etc/feast/feast-serving/application.yaml"
     ],
     envFrom: [
       {
         configMapRef: {
-          name: name_prefix("serving-configmap")
+          name: name_prefix("serving-batch-configmap")
         }
       }
     ],
   },
 
+  local online_container = {
+    name: name_prefix("serving-online"),
+    image: "gcr.io/kf-feast/feast-serving:0.3.2",
+    volumeMounts: [
+      { name: name_prefix("feast-serving-online-config"),
+        mountPath: "/etc/feast/feast-serving",
+      },
+      { name: name_prefix("feast-serving-online-gcpserviceaccount"),
+        mountPath: "/etc/gcloud/service-accounts",
+        readOnly: true },
+    ],
+    ports: [
+      {
+        containerPort: 8080,
+        name: "http",
+      },
+      {
+        containerPort: 6565,
+        name: "grpc",
+      },
+    ],
+    resources: $.values.resources.core,
+    command: [
+      "java",
+      "-Xms1024m",
+      "-Xmx1024m",
+      "-jar",
+      "/opt/feast/feast-serving.jar",
+      "--spring.config.location=file:/etc/feast/feast-serving/application.yaml"
+    ],
+    envFrom: [
+      {
+        configMapRef: {
+          name: name_prefix("serving-online-configmap")
+        }
+      }
+    ],
+  },
+
+  local statsd_container = {
+    name: "prometheus-statsd-exporter",
+    image: "prom/statsd-exporter:v0.12.1",
+    imagePullPolicy: "IfNotPresent",
+    volumeMounts: [
+      { name: "storage-volume",
+        mountPath: "/data",
+      },
+      { name: "statsd-config",
+        mountPath: "/etc/statsd_conf",
+      },
+    ],
+    env: [
+      { name: "HOME",
+        value: "/data" },
+    ],
+    ports: [
+      {
+        containerPort: 9102,
+        name: "metrics",
+        protocol: "TCP",
+      },
+      {
+        containerPort: 9125,
+        name: "statsd-tcp",
+        protocol: "TCP",
+      },
+      {
+        containerPort: 9125,
+        name: "statsd-udp",
+        protocol: "UDP",
+      },
+    ],
+    resources: {},
+    args: [
+      "--statsd.mapping-config=/etc/statsd_conf/statsd_mappings.yaml"
+    ],
+    livenessProbe: {
+      httpGet: {
+        path: "/#/status",
+        port: 9102,
+      },
+      initialDelaySeconds: 10,
+      timeoutSeconds: 10,
+    },
+    readinessProbe: {
+      httpGet: {
+        path: "/#/status",
+        port: 9102,
+      },
+      initialDelaySeconds: 10,
+      timeoutSeconds: 10,
+    },
+
+  },
 
   local feast_core_deployment = {
     kind: "Deployment",
@@ -188,7 +291,6 @@ local serving_cfg_data = import "feast-serving-configmap.libsonnet";
       labels: {
         app: name_prefix("core"),
         component: "core",
-        release: $.name,
       },
     },
     spec: {
@@ -233,11 +335,10 @@ local serving_cfg_data = import "feast-serving-configmap.libsonnet";
       }
     },
     metadata: {
-      name: name_prefix("serving-batch"),
+      name: name_prefix("feast-serving-batch"),
       labels: {
         app: name_prefix("serving-batch"),
         component: "serving",
-        release: $.name,
       },
     },
     spec: {
@@ -246,9 +347,9 @@ local serving_cfg_data = import "feast-serving-configmap.libsonnet";
         metadata: {
           labels: feast_batch_service.metadata.labels,
           annotations: {
-            "prometheus.io/scrape": "false",
-            "prometheus.io/path": "/admin/metrics",
-            "prometheus.io/port": 8081,
+            "prometheus.io/scrape": "true",
+            "prometheus.io/path": "/metrics",
+            "prometheus.io/port": 8080,
           },
         },
         spec: {
@@ -274,6 +375,164 @@ local serving_cfg_data = import "feast-serving-configmap.libsonnet";
     },
   },
 
+  local feast_online_deployment = {
+    kind: "Deployment",
+    apiVersion: "apps/v1beta1",
+    selector: {
+      matchLabels: {
+        app: name_prefix("serving-online"),
+        component: "serving",
+      }
+    },
+    metadata: {
+      name: name_prefix("feast-serving-online"),
+      labels: {
+        app: name_prefix("serving-online"),
+        component: "serving",
+      },
+    },
+    spec: {
+      replicas: $.values.replicas,
+      template: {
+        metadata: {
+          labels: feast_online_service.metadata.labels,
+          annotations: {
+            "prometheus.io/scrape": "true",
+            "prometheus.io/path": "/metrics",
+            "prometheus.io/port": 8080,
+          },
+        },
+        spec: {
+          terminationGracePeriodSeconds: 30,
+          imagePullSecrets: env_values.k8s.pull_secrets,
+          containers: [
+            online_container,
+          ],
+          volumes: [
+            { name: name_prefix("feast-serving-online-config"),
+              configMap: {
+                name: name_prefix("feast-serving-online"),
+              },
+            },
+            { name: name_prefix("feast-serving-online-gcpserviceaccount"),
+              secret: {
+                secretName: name_prefix("feast-gcp-service-account"),
+              },
+            },
+          ],
+        },
+      },
+    },
+  },
+
+  local postgresql_statefulset = {
+    kind: "StatefulSet",
+    apiVersion: "apps/v1",
+    selector: {
+      matchLabels: {
+        app: "postgresql",
+        role: "master",
+      }
+    },
+    metadata: {
+      name: name_prefix("postgresql"),
+      labels: {
+        app: "postgresql",
+      },
+    },
+    spec: {
+      serviceName: name_prefix("postgresql-headless"),
+      replicas: 1,
+      updateStrategy: {
+        type: "RollingUpdate",
+      },
+      template: {
+        metadata: {
+          name: name_prefix("postgresql"),
+          labels: {
+            app: "postgresql"
+          },
+        },
+        spec: {
+          securityContext: {
+            fsGroup: 1001
+          },
+          initContainers: [
+            #pg_init_container
+          ],
+          containers: [
+            #pg_container,
+          ],
+          volumes: [
+            { name: name_prefix("feast-core-config"),
+              configMap: {
+                name: name_prefix("feast-core"),
+              },
+            },
+            { name: name_prefix("feast-core-gcpserviceaccount"),
+              secret: {
+                secretName: name_prefix("feast-gcp-service-account"),
+              },
+            },
+          ],
+        },
+      },
+    },
+  },
+
+  local prometheus_statsd_deployment = {
+    kind: "Deployment",
+    apiVersion: "apps/v1beta1",
+    selector: {
+      matchLabels: {
+        app: "prometheus-statsd-exporter",
+      }
+    },
+    metadata: {
+      name: name_prefix("prometheus-statsd-exporter"),
+      labels: {
+        app: "prometheus-statsd-exporter",
+      },
+    },
+    spec: {
+      replicas: $.values.replicas,
+      template: {
+        metadata: {
+          labels: prometheus_statsd_service.metadata.labels,
+          annotations: {
+            "prometheus.io/scrape": "true",
+            "prometheus.io/path": "/metrics",
+            "prometheus.io/port": 8080,
+          },
+        },
+        spec: {
+          containers: [
+            statsd_container,
+          ],
+          volumes: [
+            { name: "statsd-config",
+              configMap: {
+                name: name_prefix("prometheus-statsd-exporter-config"),
+              },
+            },
+            { name: "storage-volume",
+              persistentVolumeClaim: "some-claim",
+              claimName: "the-claim"
+            },
+          ],
+        },
+      },
+    },
+  },
+
+  local prometheus_statsd_pvc = (import "__pvc.libsonnet") + {params+: {
+        name: name_prefix("prometheus-statsd-exporter"),
+        common_labels: $.values.common_labels,
+        size: "20Gi",
+        storage_class: $.values.pvcStorageClass,
+        release: $.name
+    }
+  },
 
   local feast_core_service = {
 
@@ -283,7 +542,6 @@ local serving_cfg_data = import "feast-serving-configmap.libsonnet";
       name: $.name,
       labels: {
         app: name_prefix("core"),
-        release: $.name,
       }
     },
     spec: {
@@ -295,7 +553,6 @@ local serving_cfg_data = import "feast-serving-configmap.libsonnet";
         matchLabels: {
           app: name_prefix("core"),
           component: "core",
-          release: $.name
         }
       },
       type: "ClusterIP",
@@ -310,7 +567,6 @@ local serving_cfg_data = import "feast-serving-configmap.libsonnet";
       name: $.name,
       labels: {
         app: name_prefix("serving-batch"),
-        release: $.name,
       }
     },
     spec: {
@@ -322,7 +578,105 @@ local serving_cfg_data = import "feast-serving-configmap.libsonnet";
         matchLabels: {
           app: name_prefix("serving-batch"),
           component: "serving",
-          release: $.name
+        }
+      },
+      type: "ClusterIP",
+    },
+  },
+
+  local feast_online_service = {
+
+    kind: "Service",
+    apiVersion: "v1",
+    metadata: {
+      name: $.name,
+      labels: {
+        app: name_prefix("serving-online"),
+      }
+    },
+    spec: {
+      ports: [
+        { port: 80, name: "http", targetPort: 8080},
+        { port: 6565, name: "grpc", targetPort: 6565},
+      ],
+      selector: {
+        matchLabels: {
+          app: name_prefix("serving-online"),
+          component: "serving",
+        }
+      },
+      type: "ClusterIP",
+    },
+  },
+
+  local prometheus_statsd_service = {
+
+    kind: "Service",
+    apiVersion: "v1",
+    metadata: {
+      name: $.name,
+      labels: {
+        app: name_prefix("prometheus-statsd-exporter"),
+        component: "prometheus-statsd-exporter",
+      }
+    },
+    spec: {
+      ports: [
+        { port: 9102, name: "metrics", targetPort: 9102, protocol: "TCP"},
+        { port: 9125, name: "statsd-tcp", targetPort: 9125, protocol: "TCP"},
+        { port: 9125, name: "statsd-udp", targetPort: 9125, protocol: "UDP"},
+      ],
+      selector: {
+        matchLabels: {
+          app: "prometheus-statsd-exporter",
+        }
+      },
+      type: "ClusterIP",
+    },
+  },
+
+  local postgresql_headless_service = {
+
+    kind: "Service",
+    apiVersion: "v1",
+    metadata: {
+      name: name_prefix("postgresql-headless"),
+      labels: {
+        app: "postgresql",
+      }
+    },
+    spec: {
+      ports: [
+        { port: 5432, name: "postgresql", targetPort: "postgresql"},
+      ],
+      selector: {
+        matchLabels: {
+          app: "postgresql",
+        }
+      },
+      type: "ClusterIP",
+      clusterIP: "None"
+    },
+  },
+
+  local postgresql_service = {
+
+    kind: "Service",
+    apiVersion: "v1",
+    metadata: {
+      name: name_prefix("postgresql"),
+      labels: {
+        app: name_prefix("postgresql"),
+      }
+    },
+    spec: {
+      ports: [
+        { port: 5432, name: "postgresql", targetPort: "postgresql"},
+      ],
+      selector: {
+        matchLabels: {
+          app: "postgresql",
+          role: "master"
         }
       },
       type: "ClusterIP",
@@ -340,15 +694,11 @@ local serving_cfg_data = import "feast-serving-configmap.libsonnet";
     CLOUDSQL_PASSWORD: pmk_b64("flow3/CLOUDSQL_PASSWORD", $.secrets_env),
   },
 
+  local pg_secrets = {
+    "postgresql-password": pmk_b64("flow3/CLOUDSQL_PASSWORD", $.secrets_env),
+  },
+
   local flow3_secret_mounts = {
-      "bigquery.json": pmk_b64("flow3/BIGQUERY_JSON_SECRET", $.secrets_env),
-      "aqueduct-bigquery-read.json": pmk_b64("flow3/AQUEDUCT_BIGQUERY_READ", $.secrets_env),
       "datafall-bigquery-admin.json": pmk_b64("flow3/DATAFALL_BIGQUERY_ADMIN", $.secrets_env),
-      "reporting-bigquery-admin.json": pmk_b64("flow3/REPORTING_BIGQUERY_ADMIN", $.secrets_env),
-      "monitoring-bigquery-admin.json": pmk_b64("flow3/MONITORING_BIGQUERY_ADMIN", $.secrets_env),
-      "pmf_gcloud_credentials.json": pmk_b64("pmf/GOOGLE_APPLICATION_CREDENTIALS", $.secrets_env),
-      "data-science-dev.json": pmk_b64("flow3/DATA_SCIENCE_DEV", $.secrets_env),
-      "dataflow-sa.json": pmk_b64("flow3/DATAFLOW_SA", $.secrets_env),
-      "datafall-sales-ops-bigquery-admin.json": pmk_b64("flow3/DATAFALL_SALES_OPS_BIGQUERY_ADMIN", $.secrets_env),
   },
 }

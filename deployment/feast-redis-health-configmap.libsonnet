@@ -1,0 +1,64 @@
+{
+ data: |||
+   ping_readiness_local.sh: |-
+     response=$(
+       timeout -s 9 $1 \
+       redis-cli \
+         -h localhost \
+         -p $REDIS_PORT \
+         ping
+     )
+     if [ "$response" != "PONG" ]; then
+       echo "$response"
+       exit 1
+     fi
+   ping_liveness_local.sh: |-
+     response=$(
+       timeout -s 9 $1 \
+       redis-cli \
+         -h localhost \
+         -p $REDIS_PORT \
+         ping
+     )
+     if [ "$response" != "PONG" ] && [ "$response" != "LOADING Redis is loading the dataset in memory" ]; then
+       echo "$response"
+       exit 1
+     fi
+   ping_readiness_master.sh: |-
+     response=$(
+       timeout -s 9 $1 \
+       redis-cli \
+         -h $REDIS_MASTER_HOST \
+         -p $REDIS_MASTER_PORT_NUMBER \
+         ping
+     )
+     if [ "$response" != "PONG" ]; then
+       echo "$response"
+       exit 1
+     fi
+   ping_liveness_master.sh: |-
+     response=$(
+       timeout -s 9 $1 \
+       redis-cli \
+         -h $REDIS_MASTER_HOST \
+         -p $REDIS_MASTER_PORT_NUMBER \
+         ping
+     )
+     if [ "$response" != "PONG" ] && [ "$response" != "LOADING Redis is loading the dataset in memory" ]; then
+       echo "$response"
+       exit 1
+     fi
+   ping_readiness_local_and_master.sh: |-
+     script_dir="$(dirname "$0")"
+     exit_status=0
+     "$script_dir/ping_readiness_local.sh" $1 || exit_status=$?
+     "$script_dir/ping_readiness_master.sh" $1 || exit_status=$?
+     exit $exit_status
+   ping_liveness_local_and_master.sh: |-
+     script_dir="$(dirname "$0")"
+     exit_status=0
+     "$script_dir/ping_liveness_local.sh" $1 || exit_status=$?
+     "$script_dir/ping_liveness_master.sh" $1 || exit_status=$?
+     exit $exit_status
+ |||
+}
