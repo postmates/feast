@@ -243,21 +243,21 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
 
   local feast_core_deployment = {
     kind: "Deployment",
-    apiVersion: "apps/v1beta1",
-    selector: {
-      matchLabels: {
-        app: name_prefix("core"),
-        component: "core",
-      }
-    },
+    apiVersion: "apps/v1",
     metadata: {
-      name: name_prefix("core"),
+      name: name_prefix("feast-core"),
       labels: {
         app: name_prefix("core"),
         component: "core",
       },
     },
     spec: {
+      selector: {
+        matchLabels: {
+          app: name_prefix("core"),
+          component: "core",
+        }
+      },
       replicas: $.values.replicas,
       template: {
         metadata: {
@@ -291,13 +291,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
 
   local feast_batch_deployment = {
     kind: "Deployment",
-    apiVersion: "apps/v1beta1",
-    selector: {
-      matchLabels: {
-        app: name_prefix("serving-batch"),
-        component: "serving",
-      }
-    },
+    apiVersion: "apps/v1",
     metadata: {
       name: name_prefix("feast-serving-batch"),
       labels: {
@@ -306,6 +300,12 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
       },
     },
     spec: {
+      selector: {
+        matchLabels: {
+          app: name_prefix("serving-batch"),
+          component: "serving",
+        }
+      },
       replicas: $.values.replicas,
       template: {
         metadata: {
@@ -313,7 +313,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
           annotations: {
             "prometheus.io/scrape": "true",
             "prometheus.io/path": "/metrics",
-            "prometheus.io/port": 8080,
+            "prometheus.io/port": "8080",
           },
         },
         spec: {
@@ -341,13 +341,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
 
   local feast_online_deployment = {
     kind: "Deployment",
-    apiVersion: "apps/v1beta1",
-    selector: {
-      matchLabels: {
-        app: name_prefix("serving-online"),
-        component: "serving",
-      }
-    },
+    apiVersion: "apps/v1",
     metadata: {
       name: name_prefix("feast-serving-online"),
       labels: {
@@ -356,6 +350,12 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
       },
     },
     spec: {
+      selector: {
+        matchLabels: {
+          app: name_prefix("serving-online"),
+          component: "serving",
+        }
+      },
       replicas: $.values.replicas,
       template: {
         metadata: {
@@ -363,7 +363,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
           annotations: {
             "prometheus.io/scrape": "true",
             "prometheus.io/path": "/metrics",
-            "prometheus.io/port": 8080,
+            "prometheus.io/port": "8080",
           },
         },
         spec: {
@@ -392,12 +392,6 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
   local postgresql_statefulset = {
     kind: "StatefulSet",
     apiVersion: "apps/v1",
-    selector: {
-      matchLabels: {
-        app: "postgresql",
-        role: "master",
-      }
-    },
     metadata: {
       name: name_prefix("postgresql"),
       labels: {
@@ -405,6 +399,12 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
       },
     },
     spec: {
+      selector: {
+        matchLabels: {
+          app: "postgresql",
+          role: "master",
+        }
+      },
       serviceName: name_prefix("postgresql-headless"),
       replicas: 1,
       updateStrategy: {
@@ -446,19 +446,21 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
 
   local prometheus_statsd_deployment = {
     kind: "Deployment",
-    apiVersion: "apps/v1beta1",
-    selector: {
-      matchLabels: {
-        app: "prometheus-statsd-exporter",
-      }
-    },
+    apiVersion: "apps/v1",
     metadata: {
-      name: name_prefix("prometheus-statsd-exporter"),
+      name: name_prefix("feast-prometheus-statsd-exporter"),
       labels: {
-        app: "prometheus-statsd-exporter",
+        app: name_prefix("prometheus-statsd-exporter"),
+        component: "prometheus-statsd-exporter",
       },
     },
     spec: {
+      selector: {
+        matchLabels: {
+          app: name_prefix("prometheus-statsd-exporter"),
+          component: "prometheus-statsd-exporter",
+        }
+      },
       replicas: $.values.replicas,
       template: {
         metadata: {
@@ -466,7 +468,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
           annotations: {
             "prometheus.io/scrape": "true",
             "prometheus.io/path": "/metrics",
-            "prometheus.io/port": 8080,
+            "prometheus.io/port": "8080",
           },
         },
         spec: {
@@ -480,8 +482,9 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
               },
             },
             { name: "storage-volume",
-              persistentVolumeClaim: "some-claim",
-              claimName: "the-claim"
+              persistentVolumeClaim: {
+                claimName: name_prefix("prometheus-statsd-exporter")
+              }
             },
           ],
         },
@@ -506,6 +509,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
       name: $.name,
       labels: {
         app: name_prefix("core"),
+        component: "core"
       }
     },
     spec: {
@@ -514,10 +518,8 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
         { port: 6565, name: "grpc", targetPort: 6565},
       ],
       selector: {
-        matchLabels: {
-          app: name_prefix("core"),
-          component: "core",
-        }
+        app: name_prefix("core"),
+        component: "core",
       },
       type: "ClusterIP",
     },
@@ -531,6 +533,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
       name: $.name,
       labels: {
         app: name_prefix("serving-batch"),
+        component: "serving"
       }
     },
     spec: {
@@ -539,10 +542,8 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
         { port: 6565, name: "grpc", targetPort: 6565},
       ],
       selector: {
-        matchLabels: {
-          app: name_prefix("serving-batch"),
-          component: "serving",
-        }
+        app: name_prefix("serving-batch"),
+        component: "serving",
       },
       type: "ClusterIP",
     },
@@ -564,10 +565,8 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
         { port: 6565, name: "grpc", targetPort: 6565},
       ],
       selector: {
-        matchLabels: {
-          app: name_prefix("serving-online"),
-          component: "serving",
-        }
+        app: name_prefix("serving-online"),
+        component: "serving",
       },
       type: "ClusterIP",
     },
@@ -591,9 +590,8 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
         { port: 9125, name: "statsd-udp", targetPort: 9125, protocol: "UDP"},
       ],
       selector: {
-        matchLabels: {
-          app: "prometheus-statsd-exporter",
-        }
+        app: name_prefix("prometheus-statsd-exporter"),
+        component: "prometheus-statsd-exporter",
       },
       type: "ClusterIP",
     },
@@ -614,9 +612,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
         { port: 5432, name: "postgresql", targetPort: "postgresql"},
       ],
       selector: {
-        matchLabels: {
-          app: "postgresql",
-        }
+        app: "postgresql",
       },
       type: "ClusterIP",
       clusterIP: "None"
@@ -638,10 +634,8 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
         { port: 5432, name: "postgresql", targetPort: "postgresql"},
       ],
       selector: {
-        matchLabels: {
-          app: "postgresql",
-          role: "master"
-        }
+        app: "postgresql",
+        role: "master"
       },
       type: "ClusterIP",
     },
