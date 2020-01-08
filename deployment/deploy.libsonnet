@@ -55,7 +55,6 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     manifests: [
       pmk.k8s.configMap(name_prefix("core-env"), {data: core_environment}),
       pmk.k8s.secret(name_prefix("secrets"), {data: secrets}),
-      pmk.k8s.secret(name_prefix("postgresql"), {data: pg_secrets}),
       pmk.k8s.secret(name_prefix("gcloud-secret"), {data: flow3_secret_mounts}),
       feast_core_deployment,
       feast_core_service,
@@ -64,44 +63,9 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
       prometheus_statsd_deployment,
       prometheus_statsd_service,
       prometheus_statsd_pvc,
-      postgresql_headless_service,
-      postgresql_service,
       #feast_online_deployment,
       #feast_online_service,
     ],
-  },
-
-  local ingress = {
-    kind: "Ingress",
-    apiVersion: "extensions/v1beta1",
-    metadata: {
-      name: $.name,
-      labels: $.values.common_labels,
-      annotations: {
-        "kubernetes.io/ingress.class": "nginx-internal",
-      },
-    },
-    spec: {
-      backend: {
-        serviceName: name_prefix("airflow"),
-        servicePort: "http",
-      },
-      rules: [
-        {
-          host: $.values.externalHostname,
-          http: {
-            paths: [
-              {
-                backend: {
-                  serviceName: $.name,
-                  servicePort: "http",
-                },
-              },
-            ],
-          },
-        },
-      ],
-    },
   },
 
   local core_container = {

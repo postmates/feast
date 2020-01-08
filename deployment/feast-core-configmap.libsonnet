@@ -33,9 +33,14 @@
      spring:
        datasource:
          driverClassName: org.postgresql.Driver
-         password: PASSWORD
-         url: jdbc:postgresql://{{ metadata.release }}-postgresql:5432/feast
-         username: USERNAME
+         password: password1234
+         username: pmfeast
+       cloud:
+         gcp:
+           sql:
+             database-name: feast
+             instance-connection-name: features-stage-14344:us-west1:pmfeast
+           project-id: features-stage-14344
        jpa:
          hibernate.ddl-auto: update
          hibernate.naming.physical-strategy=org.hibernate.boot.model.naming: PhysicalNamingStrategyStandardImpl

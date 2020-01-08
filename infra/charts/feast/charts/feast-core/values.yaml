@@ -9,7 +9,7 @@ postgresql:
   # will override "spring.datasource.url" value in application.yaml. The
   # username and password will also be set as environment variables that will
   # override "spring.datasource.username/password" in application.yaml.
-  enabled: true
+  enabled: false
   # postgresqlDatabase is the name of the database used by Feast Core.
   postgresqlDatabase: feast
   # postgresqlUsername is the username to authenticate to the database.
