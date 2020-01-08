@@ -6,13 +6,13 @@ The following guide will help you quickly run Feast in your local machine.
 
 The main components of Feast are:
 
-* **Feast Core** handles FeatureSpec registration, starts and monitors Ingestion 
+* **Feast Core** handles FeatureSpec registration, starts and monitors Ingestion
 
   jobs and ensures that Feast internal metadata is consistent.
 
 * **Feast Ingestion** subscribes to streams of FeatureRow and writes the feature
 
-  values to registered Stores. 
+  values to registered Stores.
 
 * **Feast Serving** handles requests for features values retrieval from the end users.
 
@@ -29,13 +29,13 @@ The main components of Feast are:
 
 > **Assumptions:**
 >
-> 1. Postgres is running in "localhost:5432" and has a database called "postgres" which 
+> 1. Postgres is running in "localhost:5432" and has a database called "postgres" which
 >
->    can be accessed with credentials user "postgres" and password "password". 
+>    can be accessed with credentials user "postgres" and password "password".
 >
->    To use different database name and credentials, please update 
+>    To use different database name and credentials, please update
 >
->    "$FEAST\_HOME/core/src/main/resources/application.yml" 
+>    "$FEAST\_HOME/core/src/main/resources/application.yml"
 >
 >    or set these environment variables: DB\_HOST, DB\_USERNAME, DB\_PASSWORD.
 >
@@ -52,16 +52,17 @@ cd feast
 #### Starting Feast Core
 
 ```text
-# Please check the default configuration for Feast Core in 
+# Please check the default configuration for Feast Core in
 # "$FEAST_HOME/core/src/main/resources/application.yml" and update it accordingly.
-# 
+#
 # Start Feast Core GRPC server on localhost:6565
 mvn --projects core spring-boot:run
 
 # If Feast Core starts successfully, verify the correct Stores are registered
 # correctly, for example by using grpc_cli.
-grpc_cli call localhost:6565 GetStores ''
+grpc_cli call localhost:6565 ListStores ''
 
+<<<<<<< HEAD:docs/contributing.md
 # Should return something similar to the following.
 # Note that you should change BigQuery projectId and datasetId accordingly
 # in "$FEAST_HOME/core/src/main/resources/application.yml"
@@ -91,12 +92,19 @@ store {
     project_id: "my-google-project-id"
     dataset_id: "my-bigquery-dataset-id"
   }
+# Should return something similar to the following if you have not updated any stores
+{
+  "store": []
 }
 ```
 
 #### Starting Feast Serving
 
-Feast Serving requires administrators to provide an **existing** store name in Feast. An instance of Feast Serving can only retrieve features from a **single** store.
+Feast Serving requires administrators to provide an **existing** store name in Feast.
+An instance of Feast Serving can only retrieve features from a **single** store.
+> In order to retrieve features from multiple stores you must start **multiple**
+instances of Feast serving. If you start multiple Feast serving on a single host,
+make sure that they are listening on different ports.
 
 > In order to retrieve features from multiple stores you must start **multiple** instances of Feast serving. If you start multiple Feast serving on a single host, make sure that they are listening on different ports.
 
@@ -111,12 +119,76 @@ grpc_cli call localhost:6566 GetFeastServingType ''
 type: FEAST_SERVING_TYPE_ONLINE
 ```
 
+#### Updating a store
+
+Create a new Store by sending a request to Feast Core.
+
+```
+# Example of updating a redis store
+
+grpc_cli call localhost:6565 UpdateStore '
+store {
+  name: "SERVING"
+  type: REDIS
+  subscriptions {
+    name: "*"
+    version: ">0"
+  }
+  redis_config {
+    host: "localhost"
+    port: 6379
+  }
+}
+'
+
+# Other supported stores examples (replacing redis_config):
+# BigQuery
+bigquery_config {
+  project_id: "my-google-project-id"
+  dataset_id: "my-bigquery-dataset-id"
+}
+
+# Cassandra: two options in cassandra depending on replication strategy
+# See details: https://docs.datastax.com/en/cassandra/3.0/cassandra/architecture/archDataDistributeReplication.html
+#
+# Please note that table name must be "feature_store" as is specified in the @Table annotation of the
+# datastax object mapper
+
+# SimpleStrategy
+cassandra_config {
+  bootstrap_hosts: "localhost"
+  port: 9042
+  keyspace: "feast"
+  table_name: "feature_store"
+  replication_options {
+    class: "SimpleStrategy"
+    replication_factor: 1
+  }
+}
+
+# NetworkTopologyStrategy
+cassandra_config {
+  bootstrap_hosts: "localhost"
+  port: 9042
+  keyspace: "feast"
+  table_name: "feature_store"
+  replication_options {
+    class: "NetworkTopologyStrategy"
+    east: 2
+    west: 2
+  }
+}
+
+# To check that the Stores has been updated correctly.
+grpc_cli call localhost:6565 ListStores ''
+```
+
 #### Registering a FeatureSet
 
 Create a new FeatureSet on Feast by sending a request to Feast Core. When a feature set is successfully registered, Feast Core will start an **ingestion** job that listens for new features in the FeatureSet. Note that Feast currently only supports source of type "KAFKA", so you must have access to a running Kafka broker to register a FeatureSet successfully.
 
 ```text
-# Example of registering a new driver feature set 
+# Example of registering a new driver feature set
 # Note the source value, it assumes that you have access to a Kafka broker
 # running on localhost:9092
 
@@ -156,7 +228,7 @@ grpc_cli call localhost:6565 GetFeatureSets ''
 # and written to the registered stores.
 # Make sure the value here is the topic assigned to the feature set
 # ... producer.send("feast-driver-features" ...)
-# 
+#
 # Install Python SDK to help writing FeatureRow messages to Kafka
 cd $FEAST_HOME/sdk/python
 pip3 install -e .

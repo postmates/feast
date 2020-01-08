@@ -170,6 +170,24 @@ public class JobCoordinatorService {
         }
       }
     }
+  }
+  /**
+   * Drain the given job. If this is successful, the job will start the draining process. When the
+   * draining process is complete, the job will be cleaned up and removed.
+   *
+   * <p>Batch jobs will be cancelled, as draining these jobs is not supported by beam.
+   *
+   * @param id feast-internal id of a job
+   */
+  public void abortJob(String id) {
+    Optional<JobInfo> jobOptional = jobInfoRepository.findById(id);
+    if (!jobOptional.isPresent()) {
+      throw new RetrievalException(String.format("Unable to retrieve job with id %s", id));
+    }
+    JobInfo job = jobOptional.get();
+    if (JobStatus.getTerminalState().contains(job.getStatus())) {
+      throw new IllegalStateException("Unable to stop job already in terminal state");
+    }
     ready.removeAll(pending);
     ready.forEach(
         fs -> {
