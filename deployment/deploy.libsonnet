@@ -19,6 +19,9 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
   local feast_serving_batch_configmap = pmk.renderJinja2(
     serving_batch_cfg_data.data,
     env_values + {metadata: {tag: tag, release: $.name}}),
+  local feast_serving_batch_store = pmk.renderJinja2(
+    serving_batch_cfg_data.store,
+    env_values + {metadata: {tag: tag, release: $.name}}),
   local feast_serving_online_configmap = pmk.renderJinja2(
     serving_online_cfg_data.data,
     env_values + {metadata: {tag: tag, release: $.name}}),
@@ -26,8 +29,10 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     prometheus_statsd_cfg_data.data,
     env_values + {metadata: {tag: tag, release: $.name}}),
   manifests: [
-    pmk.k8s.configMap("feast-core-configmap", {data: {"application.yaml": feast_core_configmap}}),
-    pmk.k8s.configMap("feast-serving-batch-configmap", {data: {"application.yaml": feast_serving_batch_configmap}}),
+    pmk.k8s.configMap(name_prefix("feast-core"), {data: {"application.yaml": feast_core_configmap}}),
+    pmk.k8s.configMap(name_prefix("feast-serving-batch"), {data:
+           {"application.yaml": feast_serving_batch_configmap,
+            "store.yaml": feast_serving_batch_store}}),
     pmk.k8s.configMap("feast-serving-online-configmap", {data: {"application.yaml": feast_serving_online_configmap}}),
     pmk.k8s.configMap("feast-prometheus-statsd-exporter", {data: {"application.yaml": prometheus_statsd_exporter_configmap}}),
   ] + self.values.manifests,
@@ -41,7 +46,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     tag:: tag,
     service_type:: "ClusterIP",
     common_labels: {
-      app: $.name,
+      release: $.name,
     },
     pvcStorageClass: "",
 
@@ -58,14 +63,15 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
       pmk.k8s.secret(name_prefix("gcloud-secret"), {data: flow3_secret_mounts}),
       feast_core_deployment,
       feast_core_service,
-      feast_batch_deployment,
-      feast_batch_service,
+      feast_ingress,
+      #feast_batch_deployment,
+      #feast_batch_service,
       prometheus_statsd_deployment,
       prometheus_statsd_service,
       prometheus_statsd_pvc,
       #feast_online_deployment,
       #feast_online_service,
-    ],
+    ], #+ feast_lb_services,
   },
 
   local core_container = {
@@ -73,7 +79,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     image: "gcr.io/kf-feast/feast-core:0.3.2",
     volumeMounts: [
       { name: name_prefix("feast-core-config"),
-        mountPath: "/etc/feast/feast-serving",
+        mountPath: "/etc/feast/feast-core",
       },
       { name: name_prefix("feast-core-gcpserviceaccount"),
         mountPath: "/etc/gcloud/service-accounts",
@@ -89,6 +95,28 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
         name: "grpc",
       },
     ],
+    livenessProbe: {
+      httpGet: {
+        path: "/healthz",
+        port: 8080,
+      },
+      initialDelaySeconds: 60,
+      periodSeconds: 10,
+      successThreshold: 1,
+      timeoutSeconds: 5,
+      failureThreshold: 5,
+    },
+    readinessProbe: {
+      httpGet: {
+        path: "/healthz",
+        port: 8080,
+      },
+      initialDelaySeconds: 15,
+      periodSeconds: 10,
+      successThreshold: 1,
+      timeoutSeconds: 10,
+      failureThreshold: 5,
+    },
     resources: $.values.resources.core,
     command: [
       "java",
@@ -101,7 +129,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     envFrom: [
       {
         configMapRef: {
-          name: name_prefix("core-configmap")
+          name: name_prefix("feast-core")
         }
       }
     ],
@@ -135,12 +163,12 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
       "-Xmx1024m",
       "-jar",
       "/opt/feast/feast-serving.jar",
-      "--spring.config.location=file:/etc/feast/feast-serving/application.yaml"
+      "--spring.config.location=file:/etc/feast/feast-serving/application.yaml",
     ],
     envFrom: [
       {
         configMapRef: {
-          name: name_prefix("serving-batch-configmap")
+          name: name_prefix("feast-serving-batch")
         }
       }
     ],
@@ -247,21 +275,21 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     metadata: {
       name: name_prefix("feast-core"),
       labels: {
-        app: name_prefix("core"),
+        app: "feast-core",
         component: "core",
       },
     },
     spec: {
       selector: {
         matchLabels: {
-          app: name_prefix("core"),
+          app: "feast-core",
           component: "core",
-        }
+        } + $.values.common_labels
       },
       replicas: $.values.replicas,
       template: {
         metadata: {
-          labels: feast_core_service.metadata.labels,
+          labels: feast_core_deployment.metadata.labels + $.values.common_labels,
           annotations: {
             "checksum/secret": pmk.sha256(feast_core_configmap),
           },
@@ -271,6 +299,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
           imagePullSecrets: env_values.k8s.pull_secrets,
           containers: [
             core_container,
+            sql_sidecar,
           ],
           volumes: [
             { name: name_prefix("feast-core-config"),
@@ -280,7 +309,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
             },
             { name: name_prefix("feast-core-gcpserviceaccount"),
               secret: {
-                secretName: name_prefix("feast-gcp-service-account"),
+                secretName: "feast-gcp-service-account",
               },
             },
           ],
@@ -295,21 +324,21 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     metadata: {
       name: name_prefix("feast-serving-batch"),
       labels: {
-        app: name_prefix("serving-batch"),
+        app: "feast-serving-batch",
         component: "serving",
       },
     },
     spec: {
       selector: {
         matchLabels: {
-          app: name_prefix("serving-batch"),
+          app: "feast-serving-batch",
           component: "serving",
         }
       },
       replicas: $.values.replicas,
       template: {
         metadata: {
-          labels: feast_batch_service.metadata.labels,
+          labels: feast_batch_deployment.metadata.labels,
           annotations: {
             "prometheus.io/scrape": "true",
             "prometheus.io/path": "/metrics",
@@ -330,7 +359,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
             },
             { name: name_prefix("feast-serving-batch-gcpserviceaccount"),
               secret: {
-                secretName: name_prefix("feast-gcp-service-account"),
+                secretName: "feast-gcp-service-account",
               },
             },
           ],
@@ -380,7 +409,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
             },
             { name: name_prefix("feast-serving-online-gcpserviceaccount"),
               secret: {
-                secretName: name_prefix("feast-gcp-service-account"),
+                secretName: "feast-gcp-service-account",
               },
             },
           ],
@@ -435,7 +464,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
             },
             { name: name_prefix("feast-core-gcpserviceaccount"),
               secret: {
-                secretName: name_prefix("feast-gcp-service-account"),
+                secretName: "feast-gcp-service-account",
               },
             },
           ],
@@ -494,7 +523,9 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
 
   local prometheus_statsd_pvc = (import "__pvc.libsonnet") + {params+: {
         name: name_prefix("prometheus-statsd-exporter"),
-        common_labels: $.values.common_labels,
+        common_labels: {
+          app: name_prefix("prometheus-statsd-exporter"),
+          component: "prometheus-statsd-exporter", } + $.values.common_labels,
         size: "20Gi",
         storage_class: $.values.pvcStorageClass,
         release: $.name
@@ -506,11 +537,14 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     kind: "Service",
     apiVersion: "v1",
     metadata: {
-      name: $.name,
+      name: name_prefix("feast-core-client"),
       labels: {
-        app: name_prefix("core"),
-        component: "core"
-      }
+        app: "feast-core",
+      },
+      annotations+: lb_annotations('%s-client' % name_prefix("feast-core")) + {
+        'prometheus.io/scrape': 'true',
+        'prometheus.io/port': '80',
+      },
     },
     spec: {
       ports: [
@@ -518,22 +552,81 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
         { port: 6565, name: "grpc", targetPort: 6565},
       ],
       selector: {
-        app: name_prefix("core"),
+        app: "feast-core",
         component: "core",
-      },
-      type: "ClusterIP",
+      } + $.values.common_labels,
+      type: "LoadBalancer",
     },
   },
+
+  local lb_annotations = function(dns_name, external_name=dns_name) {
+  } + if $.Cluster.provider == 'aws' then {
+    'dns.alpha.kubernetes.io/internal': '%s.%s.%s' % [dns_name, $.namespace, $.Cluster.svc_domain],
+    // It's the same domain for internal and external on AWS stage.
+    'dns.alpha.kubernetes.io/external': '%s.%s' % [external_name, $.Cluster.internal_domain],
+    'service.beta.kubernetes.io/aws-load-balancer-backend-protocol': 'tcp',
+    'service.beta.kubernetes.io/aws-load-balancer-internal': '0.0.0.0/0',
+  } else if $.Cluster.provider == 'gke' then {
+    // On GKE we actually want the internal postmates.net domain for "external to the cluster clients (not public    )"
+    'external-dns.alpha.kubernetes.io/hostname': '%s.%s' % [external_name, $.Cluster.internal_domain],
+    'cloud.google.com/load-balancer-type': 'Internal',
+  } else {},
+
+  local feast_client_service = pmk.k8s.service('%s-client' % name_prefix("feast-core")) {
+    spec+: {
+      type: 'LoadBalancer',
+      ports: [
+        { port: 8080, name: "http"},
+        { port: 6565, name: "grpc"},
+      ],
+      selector: {
+        app: "feast-core",
+        component: "core",
+      },
+    },
+    metadata+: {
+      labels: {
+        app: "feast-core",
+        component: "core",
+      },
+      annotations+: lb_annotations('%s-client' % name_prefix("feast-core")) + {
+        'prometheus.io/scrape': 'true',
+        'prometheus.io/port': '80',
+      },
+    },
+  },
+
+  local feast_lb_services = [
+    pmk.k8s.service('pmfeast-feast-core-client-lb-%s' % pod) + {
+      spec+: {
+        type: 'LoadBalancer',
+        ports: [
+          { port: 8080, name: "http", targetPort: 8080},
+          { port: 6565, name: "grpc", targetPort: 6565},
+        ],
+        selector: {
+          app: "feast-core",
+          component: "core",
+        },
+      },
+      metadata+: {
+        labels: {
+          app: "feast-core",
+        },
+        annotations+: lb_annotations('%s.%s' % [pod, name_prefix("feast_core")], pod),
+      },
+    }
+    for pod in std.makeArray($.values.replicas, function(i) '%s' % [name_prefix("feast-core")])
+  ],
 
   local feast_batch_service = {
 
     kind: "Service",
     apiVersion: "v1",
     metadata: {
-      name: $.name,
+      name: name_prefix("feast-serving-batch"),
       labels: {
-        app: name_prefix("serving-batch"),
-        component: "serving"
+        app: "feast-serving-batch",
       }
     },
     spec: {
@@ -542,7 +635,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
         { port: 6565, name: "grpc", targetPort: 6565},
       ],
       selector: {
-        app: name_prefix("serving-batch"),
+        app: "feast-serving-batch",
         component: "serving",
       },
       type: "ClusterIP",
@@ -597,6 +690,27 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     },
   },
 
+  local sql_sidecar = {
+    name: "cloudsql-proxy",
+    image: "gcr.io/cloudsql-docker/gce-proxy:1.16",
+    command: ["/cloud_sql_proxy",
+              "-instances=features-stage-14344:us-west1:pmfeast=tcp:5432",
+              # If running on a VPC, the Cloud SQL proxy can connect via Private IP. See:
+              # https://cloud.google.com/sql/docs/mysql/private-ip for more info.
+              # "-ip_address_types=PRIVATE",
+              "-credential_file=/secrets/cloudsql/credentials.json"],
+    securityContext: {
+      runAsUser: 2,  # non-root user
+      allowPrivilegeEscalation: false,
+    },
+    volumeMounts: [
+      { name: name_prefix("feast-core-gcpserviceaccount"),
+        mountPath: "/secrets/cloudsql",
+        readOnly: true,
+      },
+    ]
+  },
+
   local postgresql_headless_service = {
 
     kind: "Service",
@@ -641,6 +755,32 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     },
   },
 
+  local feast_ingress = {
+    kind: "Ingress",
+    apiVersion: "extensions/v1beta1",
+    metadata: {
+      name: name_prefix("feast-core"),
+      labels: {
+        app: "feast-core",
+        component: "core",
+      }
+    },
+    spec: {
+      rules: [{
+        host: "pmfeast-feast-core-client.gke-stage.postmates.net",
+        http: {
+          paths: [{
+            path: "/",
+            backend: {
+              serviceName: name_prefix("feast-core-client"),
+              servicePort: "http"
+            },
+          }],
+        },
+      }],
+    },
+  },
+
   local core_environment = {
     CLOUDSQL_HOST: feast.cloudsqlHost,
     SPRING_DATASOURCE_USERNAME: feast.springDatasourceUsername,
@@ -649,6 +789,10 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
   },
 
   local secrets = {
+    CLOUDSQL_PASSWORD: pmk_b64("flow3/CLOUDSQL_PASSWORD", $.secrets_env),
+  },
+
+  local gcp_secret = {
     CLOUDSQL_PASSWORD: pmk_b64("flow3/CLOUDSQL_PASSWORD", $.secrets_env),
   },
 

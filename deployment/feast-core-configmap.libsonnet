@@ -32,15 +32,9 @@
              port: 8125
      spring:
        datasource:
-         driverClassName: org.postgresql.Driver
          password: password1234
-         username: pmfeast
-       cloud:
-         gcp:
-           sql:
-             database-name: feast
-             instance-connection-name: features-stage-14344:us-west1:pmfeast
-           project-id: features-stage-14344
+         url: jdbc:postgresql://127.0.0.1:5432/feast
+         username: feast
        jpa:
          hibernate.ddl-auto: update
          hibernate.naming.physical-strategy=org.hibernate.boot.model.naming: PhysicalNamingStrategyStandardImpl

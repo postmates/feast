@@ -13,24 +13,20 @@
        redis-pool-max-size: 128
        redis-pool-max-idle: 64
      jobs:
-       staging-location: ""
-       store-type: ""
+       staging-location: gs://pmfeast-staging-features-stage
+       store-type: "BIGQUERY"
        store-options: {}
    grpc:
      port: 6566
      enable-reflection: true
    server:
      port: 8080
-
-   store.yaml: |
-     bigquery_config:
-       dataset_id: DATASET_ID
-       project_id: PROJECT_ID
-     name: bigquery
-     subscriptions:
-     - name: '*'
-       project: '*'
-       version: '*'
-     type: BIGQUERY
+ |||,
+ store: |||
+   name: bigquery
+   type: BIGQUERY
+   bigquery_config:
+     dataset_id: features-stage-14344:feast
+     project_id: features-stage-14344
  |||
 }
