@@ -62,8 +62,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
       pmk.k8s.secret(name_prefix("secrets"), {data: secrets}),
       pmk.k8s.secret(name_prefix("gcloud-secret"), {data: flow3_secret_mounts}),
       feast_core_deployment,
-      feast_core_service,
-      feast_ingress,
+      feast_core_service_client,
       #feast_batch_deployment,
       #feast_batch_service,
       prometheus_statsd_deployment,
@@ -76,7 +75,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
 
   local core_container = {
     name: name_prefix("core"),
-    image: "gcr.io/kf-feast/feast-core:0.3.2",
+    image: "gcr.io/kf-feast/feast-core:0.4.3",
     volumeMounts: [
       { name: name_prefix("feast-core-config"),
         mountPath: "/etc/feast/feast-core",
@@ -137,7 +136,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
 
   local batch_container = {
     name: name_prefix("serving-batch"),
-    image: "gcr.io/kf-feast/feast-serving:0.3.2",
+    image: "gcr.io/kf-feast/feast-serving:0.4.3",
     volumeMounts: [
       { name: name_prefix("feast-serving-batch-config"),
         mountPath: "/etc/feast/feast-serving",
@@ -176,7 +175,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
 
   local online_container = {
     name: name_prefix("serving-online"),
-    image: "gcr.io/kf-feast/feast-serving:0.3.2",
+    image: "gcr.io/kf-feast/feast-serving:0.4.3",
     volumeMounts: [
       { name: name_prefix("feast-serving-online-config"),
         mountPath: "/etc/feast/feast-serving",
@@ -532,7 +531,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     }
   },
 
-  local feast_core_service = {
+  local feast_core_service_client = {
 
     kind: "Service",
     apiVersion: "v1",
@@ -540,6 +539,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
       name: name_prefix("feast-core-client"),
       labels: {
         app: "feast-core",
+        component: "core",
       },
       annotations+: lb_annotations('%s-client' % name_prefix("feast-core")) + {
         'prometheus.io/scrape': 'true',
@@ -766,18 +766,22 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
       }
     },
     spec: {
-      rules: [{
-        host: "pmfeast-feast-core-client.gke-stage.postmates.net",
-        http: {
-          paths: [{
-            path: "/",
-            backend: {
-              serviceName: name_prefix("feast-core-client"),
-              servicePort: "http"
-            },
-          }],
+      rules: [
+        {
+          host: "pmfeast-feast-core-client.gke-stage.postmates.net",
+          http: {
+            paths: [
+              {
+                path: "/",
+                backend: {
+                  serviceName: name_prefix("feast-core-client"),
+                  servicePort: "http"
+                },
+              },
+            ],
+          },
         },
-      }],
+      ],
     },
   },
 

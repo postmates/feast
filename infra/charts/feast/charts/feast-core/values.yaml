@@ -9,7 +9,7 @@ postgresql:
   # will override "spring.datasource.url" value in application.yaml. The
   # username and password will also be set as environment variables that will
   # override "spring.datasource.username/password" in application.yaml.
-  enabled: false
+  enabled: true
   # postgresqlDatabase is the name of the database used by Feast Core.
   postgresqlDatabase: feast
   # postgresqlUsername is the username to authenticate to the database.
@@ -163,12 +163,12 @@ service:
     # nodePort:
 
 ingress:
-  enabled: false
+  enabled: true
   annotations: {}
     # kubernetes.io/ingress.class: nginx
   hosts:
-  # - host: chart-example.local
-  #   port: http
+   - host: pmfeast-feast-core-client.gke-stage.postmates.net
+     port: http
 
 resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious

@@ -31,7 +31,7 @@ local environments = [
     environment: "stage",
     env: EnvVars {
       cloudsqlHost: "34.94.68.56",
-      bootstrapUrl: "kafka-events-client.gke-stage.postmates.net:9093",
+      bootstrapUrl: "kafka-events-client.gke-stage.postmates.net:9092",
     },
     k8s: {
       pull_secrets: [
@@ -76,7 +76,7 @@ local environments = [
     environment: "prod",
     env: EnvVars {
       cloudsqlHost: "34.94.181.148",
-      bootstrapUrl: "kafka-events-client.gke-prod.postmates.net:9093",
+      bootstrapUrl: "kafka-events-client.gke-prod.postmates.net:9092",
     },
     k8s: {
       pull_secrets: [
