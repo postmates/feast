@@ -12,6 +12,13 @@ local pmk = import "pmk.libsonnet";
     stage: {
       cluster: "gke-stage",
       secrets_env:: "stage",
+      values+: {
+        cassandra+: {
+          data_capacity_gb: 25,  // per statefulset replica
+          cores_req: 1,
+          cores_limit: 1,
+        }
+      }
     },
   }
 }

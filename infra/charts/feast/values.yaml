@@ -87,13 +87,13 @@ feast-core:
 
 feast-serving-online:
   # enabled specifies whether to install Feast Serving Online component.
-  enabled: false
+  enabled: true
   # redis.enabled specifies whether Redis should be installed as part of Feast Serving.
   #
   # If enabled is set to "false", Feast admin has to ensure there is an
   # existing Redis running outside Feast, that Feast Serving can connect to.
   redis:
-    enabled: true
+    enabled: false
   # jvmOptions are options that will be passed to the Feast Serving JVM.
   jvmOptions:
   - -Xms1024m
@@ -110,8 +110,8 @@ feast-serving-online:
   # Refer to this link for more description:
   # https://github.com/gojek/feast/blob/79eb4ab5fa3d37102c1dca9968162a98690526ba/protos/feast/core/Store.proto
   store.yaml:
-    name: redis
-    type: REDIS
+    name: cassandra
+    type: CASSANDRA
     redis_config:
       # If redis.enabled is set to false, Feast admin should uncomment and
       # set the host value to an "existing" Redis instance Feast will use as
@@ -121,7 +121,7 @@ feast-serving-online:
       # required.
       #
       # host: redis-host
-      port: 6379
+      port: 7000
     subscriptions:
     - name: "*"
       project: "*"
@@ -184,7 +184,7 @@ feast-serving-batch:
         # This default configuration assumes that Feast Serving Online is
         # enabled as well. So Feast Serving Batch will share the same
         # Redis instance to store job statuses.
-        store-type: REDIS
+        store-type: CASSANDRA
   # store.yaml is the configuration for Feast Store.
   #
   # Refer to this link for more description:
