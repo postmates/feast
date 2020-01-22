@@ -2,7 +2,7 @@
  data: |||
    feast:
      version: 0.3
-     core-host: {{ metadata.release }}-feast-core
+     core-host: pmfeast-feast-core-client.gke-stage.postmates.net
      core-grpc-port: 6565
      tracing:
        enabled: false
@@ -21,16 +21,16 @@
      enable-reflection: true
    server:
      port: 8080
-
-   store.yaml: |
-     name: redis
-     redis_config:
-       host: RELEASE-NAME-redis-headless
-       port: 6379
-     subscriptions:
-     - name: '*'
-       project: '*'
-       version: '*'
-     type: REDIS
+ |||,
+ store: |||
+   name: cassandra
+   cassandra_config:
+     host: 0.0.0.0
+     port: 7000
+   subscriptions:
+   - name: '*'
+     project: '*'
+     version: '*'
+   type: CASSANDRA
  |||
 }

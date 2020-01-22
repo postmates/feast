@@ -11,6 +11,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
 {
   name: "pmfeast",
   namespace: "team-data",
+  local envFromObj(xs) = [{ name: k, value: std.toString(xs[k]) } for k in std.objectFields(xs)],
   local env_values = environment.base_env($.secrets_env),
   local tag = "v%s" % pmk.thisCommit[0:8],
   local feast_core_configmap = pmk.renderJinja2(
@@ -25,16 +26,36 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
   local feast_serving_online_configmap = pmk.renderJinja2(
     serving_online_cfg_data.data,
     env_values + {metadata: {tag: tag, release: $.name}}),
+  local feast_serving_online_store = pmk.renderJinja2(
+    serving_online_cfg_data.store,
+    env_values + {metadata: {tag: tag, release: $.name}}),
   local prometheus_statsd_exporter_configmap = pmk.renderJinja2(
     prometheus_statsd_cfg_data.data,
     env_values + {metadata: {tag: tag, release: $.name}}),
+  local cassandra_configmap = {
+    kind: "ConfigMap",
+    apiVersion: "v1",
+    metadata: {
+      name: name_prefix("cassandra-config"),
+      labels: {
+        app: "feast-serving-online",
+        component: "cassandra",
+      },
+    },
+    data: {
+      "jmx_exporter.yml": importstr "./docker-cassandra/jmx_exporter.yml",
+    },
+  },
   manifests: [
     pmk.k8s.configMap(name_prefix("feast-core"), {data: {"application.yaml": feast_core_configmap}}),
     pmk.k8s.configMap(name_prefix("feast-serving-batch"), {data:
            {"application.yaml": feast_serving_batch_configmap,
             "store.yaml": feast_serving_batch_store}}),
-    pmk.k8s.configMap("feast-serving-online-configmap", {data: {"application.yaml": feast_serving_online_configmap}}),
-    pmk.k8s.configMap("feast-prometheus-statsd-exporter", {data: {"application.yaml": prometheus_statsd_exporter_configmap}}),
+    pmk.k8s.configMap(name_prefix("feast-serving-online"), {data:
+           {"application.yaml": feast_serving_online_configmap,
+            "store.yaml": feast_serving_online_store}}),
+    pmk.k8s.configMap(name_prefix("feast-prometheus-statsd-exporter"), {data: {"statsd_mappings.yaml": prometheus_statsd_exporter_configmap}}),
+    cassandra_configmap,
   ] + self.values.manifests,
   local name_prefix(t) = "%s-%s" % [self.name, t],
   local pmk_b64(secret, env) = std.base64(pmk.secret(secret, env)),
@@ -42,18 +63,47 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
 
   values: {
 
-    image:: "gcr.io/kf-feast/",
+    images:: {
+      cassandra: "gcr.io/pm-registry/cassandra:3.11.5"
+    },
     tag:: tag,
     service_type:: "ClusterIP",
     common_labels: {
       release: $.name,
     },
-    pvcStorageClass: "",
 
     externalHostname:: "%s.%s" % [$.name, $.Cluster.internal_domain],
     externalURL:: "http://%s" % self.externalHostname,
 
     resources: env_values.resources,
+    cassandra: {
+      cluster_name: "feast",
+      dc_name: "%s-%s" % [$.Cluster.environment, $.Cluster.region],
+      keyspace: "feast_v1",
+
+      // Override these to adjust the size of each pod
+      ram_req_gb: 8,
+      cores_req: 2,
+      cores_limit: 2,
+
+      jvm_max_heap_mb: (
+          // Formula is from https://docs.datastax.com/en/cassandra/3.0/cassandra/operations/opsTuneJVM.html#opsTuneJVM__tuning-the-java-heap
+          local R = self.ram_req_gb * 1024;
+          std.max(std.min(R/2, 1024),  std.min(R/4, 8192))
+      ),
+      jvm_heap_newsize_mb: (
+          // Only relevant when using CMS GC (which is the default)
+          // (same URL for this one as max_heap_mb)
+          std.min(self.cores_limit * 100, self.jvm_max_heap_mb / 4)
+      ),
+      service_name: "cassandra",
+
+      // Careful here: it is not easy to change the size of EBS volumes after deployment
+      data_capacity_gb: 100,
+      storage_class: "ssd",
+
+      replicas: 3,
+    },
 
     replicas: 1,
 
@@ -63,19 +113,20 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
       pmk.k8s.secret(name_prefix("gcloud-secret"), {data: flow3_secret_mounts}),
       feast_core_deployment,
       feast_core_service_client,
+      cassandra_service,
+      cassandra_statefulset,
       #feast_batch_deployment,
       #feast_batch_service,
       prometheus_statsd_deployment,
       prometheus_statsd_service,
-      prometheus_statsd_pvc,
       #feast_online_deployment,
-      #feast_online_service,
-    ], #+ feast_lb_services,
+      #feast_online_service_client,
+    ],
   },
 
   local core_container = {
     name: name_prefix("core"),
-    image: "gcr.io/kf-feast/feast-core:0.4.3",
+    image: "gcr.io/kf-feast/feast-core:0.3.6",
     volumeMounts: [
       { name: name_prefix("feast-core-config"),
         mountPath: "/etc/feast/feast-core",
@@ -136,7 +187,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
 
   local batch_container = {
     name: name_prefix("serving-batch"),
-    image: "gcr.io/kf-feast/feast-serving:0.4.3",
+    image: "gcr.io/kf-feast/feast-serving:0.3.6",
     volumeMounts: [
       { name: name_prefix("feast-serving-batch-config"),
         mountPath: "/etc/feast/feast-serving",
@@ -175,7 +226,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
 
   local online_container = {
     name: name_prefix("serving-online"),
-    image: "gcr.io/kf-feast/feast-serving:0.4.3",
+    image: "gcr.io/kf-feast/feast-serving:0.3.6",
     volumeMounts: [
       { name: name_prefix("feast-serving-online-config"),
         mountPath: "/etc/feast/feast-serving",
@@ -206,7 +257,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     envFrom: [
       {
         configMapRef: {
-          name: name_prefix("serving-online-configmap")
+          name: name_prefix("feast-serving-online")
         }
       }
     ],
@@ -217,9 +268,6 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     image: "prom/statsd-exporter:v0.12.1",
     imagePullPolicy: "IfNotPresent",
     volumeMounts: [
-      { name: "storage-volume",
-        mountPath: "/data",
-      },
       { name: "statsd-config",
         mountPath: "/etc/statsd_conf",
       },
@@ -339,6 +387,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
         metadata: {
           labels: feast_batch_deployment.metadata.labels,
           annotations: {
+            "checksum/secret": pmk.sha256(feast_serving_batch_configmap),
             "prometheus.io/scrape": "true",
             "prometheus.io/path": "/metrics",
             "prometheus.io/port": "8080",
@@ -373,22 +422,23 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     metadata: {
       name: name_prefix("feast-serving-online"),
       labels: {
-        app: name_prefix("serving-online"),
+        app: "feast-serving-online",
         component: "serving",
       },
     },
     spec: {
       selector: {
         matchLabels: {
-          app: name_prefix("serving-online"),
+          app: "feast-serving-online",
           component: "serving",
-        }
+        } + $.values.common_labels
       },
       replicas: $.values.replicas,
       template: {
         metadata: {
-          labels: feast_online_service.metadata.labels,
+          labels: feast_online_deployment.metadata.labels + $.values.common_labels,
           annotations: {
+            "checksum/secret": pmk.sha256(feast_serving_online_configmap),
             "prometheus.io/scrape": "true",
             "prometheus.io/path": "/metrics",
             "prometheus.io/port": "8080",
@@ -417,58 +467,151 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     },
   },
 
-  local postgresql_statefulset = {
+  local cassandra_statefulset = {
     kind: "StatefulSet",
     apiVersion: "apps/v1",
     metadata: {
-      name: name_prefix("postgresql"),
+      name: $.values.cassandra.service_name,
       labels: {
-        app: "postgresql",
+        app: "feast-serving-online",
+        component: "cassandra",
       },
     },
+
     spec: {
+      replicas: $.values.cassandra.replicas,
+      serviceName: $.values.cassandra.service_name,
       selector: {
-        matchLabels: {
-          app: "postgresql",
-          role: "master",
-        }
+        matchLabels: cassandra_statefulset.spec.template.metadata.labels,
       },
-      serviceName: name_prefix("postgresql-headless"),
-      replicas: 1,
-      updateStrategy: {
-        type: "RollingUpdate",
-      },
+      // Kubernetes doesn't have a way of knowing when it is actually safe to
+      // replace pods in this statefulset, so we err on the side of caution
+      // and deal with it manually.  If you got here wondering why your pods
+      // have not been updated after updating this spec, the answer is that
+      // you need to manually delete each pod.
+      updateStrategy: {type: "OnDelete"},
+
       template: {
+
         metadata: {
-          name: name_prefix("postgresql"),
           labels: {
-            app: "postgresql"
+            app: "cassandra",
+            "feast-infra": "cassandra-replica", // cannot change this without deleting the entire statefulset
           },
         },
+
         spec: {
-          securityContext: {
-            fsGroup: 1001
+          affinity: {
+            podAntiAffinity: {
+              requiredDuringSchedulingIgnoredDuringExecution: [{
+                labelSelector: {
+                  // Avoid scheduling more than 1 cassandra pod per k8s node
+                  matchExpressions: [{
+                    key: "feast-infra",
+                    operator: "In",
+                    values: ["cassandra-replica"],
+                  }],
+                },
+                topologyKey: "kubernetes.io/hostname",
+              }],
+            },
           },
-          initContainers: [
-            #pg_init_container
-          ],
+          terminationGracePeriodSeconds: 1800,
           containers: [
-            #pg_container,
+            { name: "cassandra",
+              image: $.values.images.cassandra,
+              # We can't just mount the volume at /etc/cassandra/jmx_exporter.yml
+              # because docker-entrypoint.sh insists on running chown -R cassandra /etc/cassandra
+              # at startup.  Insert usual "this is why we can't have nice things" etc
+              command: ["/bin/sh", "-c",
+                |||
+                  sed -i 's|/etc/cassandra/jmx_exporter.yml|/mnt/cassandra-config/jmx_exporter.yml|' /etc/cassandra/jvm.options;
+                  exec /docker-entrypoint.sh cassandra -f
+                |||,
+              ],
+              env: envFromObj({
+                MAX_HEAP_SIZE: "%dM" % $.values.cassandra.jvm_max_heap_mb,
+                HEAP_NEWSIZE: "%dM" % $.values.cassandra.jvm_heap_newsize_mb,
+                CASSANDRA_CLUSTER_NAME: $.values.cassandra.cluster_name,
+                CASSANDRA_DC: $.values.cassandra.dc_name,
+                CASSANDRA_RACK: "rack1",
+                CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch",
+                // Use up to 3 nodes as gossip seeds
+                CASSANDRA_SEEDS: std.join(",", [
+                  "cassandra-%s.%s" % [n, $.values.cassandra.service_name]
+                  for n in std.range(0, std.min($.values.cassandra.replicas, 2))
+                ])
+              }) + [
+                { name: "CASSANDRA_LISTEN_ADDRESS",
+                  valueFrom: {
+                    fieldRef: {
+                      fieldPath: "status.podIP",
+                    },
+                  },
+                },
+              ],
+              volumeMounts: [
+                { name: "cassandra-data",
+                  mountPath: "/var/lib/cassandra",
+                },
+                { name: "cassandra-logs",
+                  mountPath: "/var/log/cassandra",
+                },
+                { name: "cassandra-config",
+                  mountPath: "/mnt/cassandra-config",
+                },
+              ],
+              ports: [
+                {name: "intra-node",     containerPort: 7000},
+                {name: "tls-intra-node", containerPort: 7001},
+                {name: "metrics",        containerPort: 7070},
+                {name: "jmx",            containerPort: 7199},
+                {name: "cql",            containerPort: 9042},
+                {name: "thrift",         containerPort: 9160},
+              ],
+              lifecycle: {
+                preStop: {
+                  exec: {
+                    command: ["/bin/sh", "-c", "nodetool drain"],
+                  },
+                },
+              },
+              resources: {
+                requests: {
+                  memory: "%dGi" % $.values.cassandra.ram_req_gb,
+                  cpu: "%dm" % ($.values.cassandra.cores_req * 1000),
+                },
+                limits: {
+                  memory: "%dGi" % $.values.cassandra.ram_req_gb,
+                  cpu: "%dm" % ($.values.cassandra.cores_limit * 1000),
+                },
+              },
+            },
           ],
           volumes: [
-            { name: name_prefix("feast-core-config"),
-              configMap: {
-                name: name_prefix("feast-core"),
-              },
+            { name: "cassandra-logs",
+              emptyDir: {},
             },
-            { name: name_prefix("feast-core-gcpserviceaccount"),
-              secret: {
-                secretName: "feast-gcp-service-account",
+            { name: "cassandra-config",
+              configMap: {
+                name: name_prefix("cassandra-config"),
               },
             },
           ],
         },
       },
+      volumeClaimTemplates: [{
+        metadata: {name: "cassandra-data"},
+        spec: {
+          storageClassName: $.values.cassandra.storage_class,
+          accessModes: ["ReadWriteOnce"],
+          resources: {
+            requests: {
+              storage: "%dGi" % $.values.cassandra.data_capacity_gb,
+            },
+          },
+        },
+      }],
     },
   },
 
@@ -494,6 +637,7 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
         metadata: {
           labels: prometheus_statsd_service.metadata.labels,
           annotations: {
+            "checksum/secret": pmk.sha256(prometheus_statsd_exporter_configmap),
             "prometheus.io/scrape": "true",
             "prometheus.io/path": "/metrics",
             "prometheus.io/port": "8080",
@@ -506,29 +650,13 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
           volumes: [
             { name: "statsd-config",
               configMap: {
-                name: name_prefix("prometheus-statsd-exporter-config"),
+                name: name_prefix("feast-prometheus-statsd-exporter"),
               },
-            },
-            { name: "storage-volume",
-              persistentVolumeClaim: {
-                claimName: name_prefix("prometheus-statsd-exporter")
-              }
             },
           ],
         },
       },
     },
-  },
-
-  local prometheus_statsd_pvc = (import "__pvc.libsonnet") + {params+: {
-        name: name_prefix("prometheus-statsd-exporter"),
-        common_labels: {
-          app: name_prefix("prometheus-statsd-exporter"),
-          component: "prometheus-statsd-exporter", } + $.values.common_labels,
-        size: "20Gi",
-        storage_class: $.values.pvcStorageClass,
-        release: $.name
-    }
   },
 
   local feast_core_service_client = {
@@ -642,15 +770,19 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     },
   },
 
-  local feast_online_service = {
-
+  local feast_online_service_client = {
     kind: "Service",
     apiVersion: "v1",
     metadata: {
-      name: $.name,
+      name: name_prefix("feast-serving-online-client"),
       labels: {
-        app: name_prefix("serving-online"),
-      }
+        app: "feast-serving-online",
+        component: "serving",
+      },
+      annotations+: lb_annotations('%s-client' % name_prefix("feast-serving-online")) + {
+        'prometheus.io/scrape': 'true',
+        'prometheus.io/port': '80',
+      },
     },
     spec: {
       ports: [
@@ -658,10 +790,45 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
         { port: 6565, name: "grpc", targetPort: 6565},
       ],
       selector: {
-        app: name_prefix("serving-online"),
+        app: "feast-serving-online",
         component: "serving",
+      } + $.values.common_labels,
+      type: "LoadBalancer",
+    },
+  },
+
+  local cassandra_service = {
+    kind: "Service",
+    apiVersion: "v1",
+    metadata: {
+      name: $.values.cassandra.service_name,
+      labels: {
+        app: "feast-serving-online",
+        component: "cassandra",
+
+        // Labels used in prometheus/grafana stuff
+        datacenter: $.values.cassandra.dc_name,
+        cluster: $.values.cassandra.cluster_name,
       },
-      type: "ClusterIP",
+      annotations: {
+        "prometheus.io/scrape": "true",
+        "prometheus.io/port": "7070",
+      },
+    },
+
+    spec: {
+      clusterIP: "None",
+      ports: [
+        { port: 7000, name: "intra-node" },
+        { port: 7001, name: "tls-intra-node"},
+        { port: 7070, name: "metrics"},
+        { port: 7199, name: "jmx"},
+        { port: 9042, name: "cql"},
+        { port: 9160, name: "thrift"},
+      ],
+      selector: {
+        "feast-infra": "cassandra-replica",
+      },
     },
   },
 
@@ -670,10 +837,9 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
     kind: "Service",
     apiVersion: "v1",
     metadata: {
-      name: $.name,
+      name: name_prefix("feast-prometheus-statsd"),
       labels: {
-        app: name_prefix("prometheus-statsd-exporter"),
-        component: "prometheus-statsd-exporter",
+        app: name_prefix("prometheus-statsd-exporter"), component: "prometheus-statsd-exporter",
       }
     },
     spec: {
@@ -709,50 +875,6 @@ local prometheus_statsd_cfg_data = import "prometheus-statsd-exporter-configmap.
         readOnly: true,
       },
     ]
-  },
-
-  local postgresql_headless_service = {
-
-    kind: "Service",
-    apiVersion: "v1",
-    metadata: {
-      name: name_prefix("postgresql-headless"),
-      labels: {
-        app: "postgresql",
-      }
-    },
-    spec: {
-      ports: [
-        { port: 5432, name: "postgresql", targetPort: "postgresql"},
-      ],
-      selector: {
-        app: "postgresql",
-      },
-      type: "ClusterIP",
-      clusterIP: "None"
-    },
-  },
-
-  local postgresql_service = {
-
-    kind: "Service",
-    apiVersion: "v1",
-    metadata: {
-      name: name_prefix("postgresql"),
-      labels: {
-        app: name_prefix("postgresql"),
-      }
-    },
-    spec: {
-      ports: [
-        { port: 5432, name: "postgresql", targetPort: "postgresql"},
-      ],
-      selector: {
-        app: "postgresql",
-        role: "master"
-      },
-      type: "ClusterIP",
-    },
   },
 
   local feast_ingress = {

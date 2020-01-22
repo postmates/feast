@@ -10,11 +10,9 @@
        service-name: feast-serving
      store:
        config-path: /etc/feast/feast-serving/store.yaml
-       redis-pool-max-size: 128
-       redis-pool-max-idle: 64
      jobs:
        staging-location: gs://pmfeast-staging-features-stage
-       store-type: "BIGQUERY"
+       store-type: "CASSANDRA"
        store-options: {}
    grpc:
      port: 6566
