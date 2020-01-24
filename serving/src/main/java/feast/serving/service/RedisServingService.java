@@ -25,6 +25,7 @@ import static feast.serving.util.RefUtil.generateFeatureStringRef;
 
 import com.google.common.collect.Maps;
 import com.google.protobuf.AbstractMessageLite;
+import com.google.protobuf.Duration;
 import com.google.protobuf.InvalidProtocolBufferException;
 import feast.core.FeatureSetProto.EntitySpec;
 import feast.core.FeatureSetProto.FeatureSetSpec;
@@ -57,15 +58,16 @@ import org.slf4j.Logger;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
-public class RedisServingService extends OnlineServingService<RedisKey, byte[]> {
+public class RedisServingService implements ServingService {
 
   private static final Logger log = org.slf4j.LoggerFactory.getLogger(RedisServingService.class);
   private final JedisPool jedisPool;
+  private final CachedSpecService specService;
   private final Tracer tracer;
 
   public RedisServingService(JedisPool jedisPool, CachedSpecService specService, Tracer tracer) {
-    super(specService, tracer);
     this.jedisPool = jedisPool;
+    this.specService = specService;
     this.tracer = tracer;
   }
 
@@ -140,8 +142,7 @@ public class RedisServingService extends OnlineServingService<RedisKey, byte[]> 
    * @param featureSetSpec featureSetSpec of the features to retrieve
    * @return list of RedisKeys
    */
-  @Override
-  List<RedisKey> createLookupKeys(
+  private List<RedisKey> getRedisKeys(
       List<String> featureSetEntityNames,
       List<EntityRow> entityRows,
       FeatureSetSpec featureSetSpec) {
@@ -153,33 +154,6 @@ public class RedisServingService extends OnlineServingService<RedisKey, byte[]> 
               .collect(Collectors.toList());
       return redisKeys;
     }
-  }
-
-  @Override
-  protected boolean isEmpty(byte[] response) {
-    return response == null;
-  }
-
-  /**
-   * Send a list of get request as an mget
-   *
-   * @param keys list of {@link RedisKey}
-   * @return list of {@link FeatureRow} in primitive byte representation for each {@link RedisKey}
-   */
-  @Override
-  protected List<byte[]> getAll(List<RedisKey> keys) {
-    Jedis jedis = jedisPool.getResource();
-    byte[][] binaryKeys =
-        keys.stream()
-            .map(AbstractMessageLite::toByteArray)
-            .collect(Collectors.toList())
-            .toArray(new byte[0][0]);
-    return jedis.mget(binaryKeys);
-  }
-
-  @Override
-  FeatureRow parseResponse(byte[] response) throws InvalidProtocolBufferException {
-    return FeatureRow.parseFrom(response);
   }
 
   /**

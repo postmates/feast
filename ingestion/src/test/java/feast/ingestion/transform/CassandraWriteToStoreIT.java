@@ -23,6 +23,7 @@ import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.google.protobuf.InvalidProtocolBufferException;
 import feast.core.FeatureSetProto.FeatureSetSpec;
+import feast.core.FeatureSetProto.FeatureSet;
 import feast.core.StoreProto.Store;
 import feast.core.StoreProto.Store.CassandraConfig;
 import feast.core.StoreProto.Store.StoreType;
@@ -71,10 +72,10 @@ public class CassandraWriteToStoreIT implements Serializable {
     }
 
     @Override
-    public Map<String, FeatureSetSpec> getFeatureSetSpecs() {
-      return new HashMap<String, FeatureSetSpec>() {
+    public Map<String, FeatureSet> getFeatureSets() {
+      return new HashMap<String, FeatureSet>() {
         {
-          put(featureSetSpec.getName() + ":" + featureSetSpec.getVersion(), featureSetSpec);
+          put(featureSetSpec.getName() + ":" + featureSetSpec.getVersion(), FeatureSet.newBuilder().setSpec(featureSetSpec).build());
         }
       };
     }

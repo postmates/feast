@@ -18,6 +18,7 @@ package feast.store.serving.cassandra;
 
 import com.google.protobuf.Duration;
 import feast.core.FeatureSetProto.FeatureSetSpec;
+import feast.core.FeatureSetProto.FeatureSet;
 import feast.test.TestUtil;
 import feast.types.FeatureRowProto.FeatureRow;
 import feast.types.ValueProto.Value;
@@ -71,11 +72,11 @@ public class FeatureRowToCassandraMutationDoFnTest implements Serializable {
         input.apply(
             ParDo.of(
                 new FeatureRowToCassandraMutationDoFn(
-                    new HashMap<String, FeatureSetSpec>() {
+                    new HashMap<String, FeatureSet>() {
                       {
                         put(
                             featureSetSpec.getName() + ":" + featureSetSpec.getVersion(),
-                            featureSetSpec);
+                            FeatureSet.newBuilder().setSpec(featureSetSpec).build());
                       }
                     },
                     Duration.newBuilder().setSeconds(0).build())));
@@ -134,11 +135,11 @@ public class FeatureRowToCassandraMutationDoFnTest implements Serializable {
         input.apply(
             ParDo.of(
                 new FeatureRowToCassandraMutationDoFn(
-                    new HashMap<String, FeatureSetSpec>() {
+                    new HashMap<String, FeatureSet>() {
                       {
                         put(
                             featureSetSpec.getName() + ":" + featureSetSpec.getVersion(),
-                            featureSetSpec);
+                            FeatureSet.newBuilder().setSpec(featureSetSpec).build());
                       }
                     },
                     Duration.newBuilder().setSeconds(0).build())));
@@ -199,11 +200,11 @@ public class FeatureRowToCassandraMutationDoFnTest implements Serializable {
         input.apply(
             ParDo.of(
                 new FeatureRowToCassandraMutationDoFn(
-                    new HashMap<String, FeatureSetSpec>() {
+                    new HashMap<String, FeatureSet>() {
                       {
                         put(
                             featureSetSpec.getName() + ":" + featureSetSpec.getVersion(),
-                            featureSetSpec);
+                            FeatureSet.newBuilder().setSpec(featureSetSpec).build());
                       }
                     },
                     defaultTtl)));

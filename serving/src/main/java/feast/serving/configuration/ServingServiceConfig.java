@@ -34,7 +34,6 @@ import feast.serving.FeastProperties;
 import feast.serving.service.BigQueryServingService;
 import feast.serving.FeastProperties.JobProperties;
 import feast.serving.FeastProperties.StoreProperties;
-import feast.serving.service.CachedSpecService;
 import feast.serving.service.CassandraServingService;
 import feast.serving.service.JobService;
 import feast.serving.service.NoopJobService;

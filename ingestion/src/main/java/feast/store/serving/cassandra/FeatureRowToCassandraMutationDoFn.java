@@ -18,6 +18,7 @@ package feast.store.serving.cassandra;
 
 import com.google.protobuf.Duration;
 import com.google.protobuf.util.Timestamps;
+import feast.core.FeatureSetProto.FeatureSet;
 import feast.core.FeatureSetProto.FeatureSetSpec;
 import feast.core.FeatureSetProto.FeatureSpec;
 import feast.types.FeatureRowProto.FeatureRow;
@@ -36,13 +37,14 @@ public class FeatureRowToCassandraMutationDoFn extends DoFn<FeatureRow, Cassandr
 
   private static final Logger log =
       org.slf4j.LoggerFactory.getLogger(FeatureRowToCassandraMutationDoFn.class);
-  private Map<String, FeatureSetSpec> featureSetSpecs;
+  private Map<String, FeatureSet> featureSets;
   private Map<String, Integer> maxAges;
 
-  public FeatureRowToCassandraMutationDoFn(Map<String, FeatureSetSpec> specs, Duration defaultTtl) {
-    this.featureSetSpecs = specs;
+  public FeatureRowToCassandraMutationDoFn(Map<String, FeatureSet> featureSets, Duration defaultTtl) {
+    this.featureSets = featureSets;
     this.maxAges = new HashMap<>();
-    for (FeatureSetSpec spec : specs.values()) {
+    for (FeatureSet set : featureSets.values()) {
+      FeatureSetSpec spec = set.getSpec();
       String featureSetName = spec.getName() + ":" + spec.getVersion();
       if (spec.getMaxAge() != null && spec.getMaxAge().getSeconds() > 0) {
         maxAges.put(featureSetName, Math.toIntExact(spec.getMaxAge().getSeconds()));
@@ -57,7 +59,7 @@ public class FeatureRowToCassandraMutationDoFn extends DoFn<FeatureRow, Cassandr
   public void processElement(ProcessContext context) {
     FeatureRow featureRow = context.element();
     try {
-      FeatureSetSpec featureSetSpec = featureSetSpecs.get(featureRow.getFeatureSet());
+      FeatureSetSpec featureSetSpec = featureSets.get(featureRow.getFeatureSet()).getSpec();
       Set<String> featureNames =
           featureSetSpec.getFeaturesList().stream()
               .map(FeatureSpec::getName)
