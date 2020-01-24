@@ -164,7 +164,7 @@ public class CassandraServingService implements ServingService {
    * Send a list of get request as an mget
    *
    * @param keys list of string keys
-   * @return list of {@link FeatureRow} in primitive byte representation for each key
+   *
    */
   protected void getAndProcessAll(
       List<String> keys,
