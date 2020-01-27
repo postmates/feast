@@ -16,10 +16,10 @@
  */
 package feast.serving.configuration;
 
-import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.HostDistance;
-import com.datastax.driver.core.PoolingOptions;
-import com.datastax.driver.core.Session;
+import com.datastax.driver.core.*;
+import com.datastax.driver.core.schemabuilder.Create;
+import com.datastax.driver.core.schemabuilder.KeyspaceOptions;
+import com.datastax.driver.core.schemabuilder.SchemaBuilder;
 import feast.core.StoreProto;
 import feast.core.StoreProto.Store.StoreType;
 import feast.serving.FeastProperties;
@@ -31,10 +31,12 @@ import feast.serving.specs.CachedSpecService;
 
 import java.net.InetSocketAddress;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import redis.clients.jedis.JedisPool;
@@ -43,6 +45,7 @@ import redis.clients.jedis.JedisPoolConfig;
 @Configuration
 public class JobServiceConfig {
 
+  private static final Logger log = org.slf4j.LoggerFactory.getLogger(ServingServiceConfig.class);
   public static final String DEFAULT_REDIS_MAX_CONN = "8";
   public static final String DEFAULT_REDIS_MAX_IDLE = "8";
   public static final String DEFAULT_REDIS_MAX_WAIT_MILLIS = "50";
@@ -95,8 +98,8 @@ public class JobServiceConfig {
         poolingOptions.setPoolTimeoutMillis(storeProperties.getCassandraPoolTimeoutMillis());
         StoreProto.Store.CassandraConfig cassandraConfig = store.getCassandraConfig();
         List<InetSocketAddress> contactPoints =
-                Arrays.stream(cassandraConfig.getBootstrapHosts().split(","))
-                        .map(h -> new InetSocketAddress(h, cassandraConfig.getPort()))
+                Arrays.stream(storeOptions.get("bootstrapHosts").split(","))
+                        .map(h -> new InetSocketAddress(h, Integer.parseInt(storeOptions.get("port"))))
                         .collect(Collectors.toList());
         Cluster cluster =
                 Cluster.builder()
@@ -106,7 +109,47 @@ public class JobServiceConfig {
         // Session in Cassandra is thread-safe and maintains connections to cluster nodes internally
         // Recommended to use one session per keyspace instead of open and close connection for each
         // request
-        Session session = cluster.connect();
+        Session session;
+
+        try {
+          String keyspace = storeOptions.get("keyspace");
+          KeyspaceMetadata keyspaceMetadata = cluster.getMetadata().getKeyspace(keyspace);
+          if (keyspaceMetadata == null) {
+            log.info("Creating keyspace '{}'", keyspace);
+            Map<String, Object> replicationOptions = new HashMap<>();
+            replicationOptions.put("class", storeOptions.get("replicationOptionsClass"));
+            replicationOptions.put("stage-us-west1", storeOptions.get("replicationOptionsWest"));
+            KeyspaceOptions createKeyspace =
+                    SchemaBuilder.createKeyspace(keyspace)
+                            .ifNotExists()
+                            .with()
+                            .replication(replicationOptions);
+            session = cluster.newSession();
+            session.execute(createKeyspace);
+          }
+
+          session = cluster.connect(keyspace);
+          // Currently no support for creating table from entity mapper:
+          // https://datastax-oss.atlassian.net/browse/JAVA-569
+          Create createTable =
+                  SchemaBuilder.createTable(keyspace, storeOptions.get("tableName"))
+                          .ifNotExists()
+                          .addPartitionKey("job_uuid", DataType.text())
+                          .addClusteringColumn("timestamp", DataType.timestamp())
+                          .addColumn("job_data", DataType.text());
+          log.info("Create Cassandra table if not exists..");
+          session.execute(createTable);
+
+        } catch (RuntimeException e) {
+          throw new RuntimeException(
+                  String.format(
+                          "Failed to connect to Cassandra at bootstrap hosts: '%s' port: '%s'. Please check that your Cassandra is running and accessible from Feast.",
+                          contactPoints.stream()
+                                  .map(InetSocketAddress::getHostName)
+                                  .collect(Collectors.joining(",")),
+                          cassandraConfig.getPort()),
+                  e);
+        }
         return new CassandraBackedJobService(session);
       case UNRECOGNIZED:
       default:

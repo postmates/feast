@@ -23,6 +23,7 @@ import com.datastax.driver.core.DataType;
 import com.datastax.driver.core.querybuilder.QueryBuilder;
 import com.google.gson.JsonObject;
 import com.google.protobuf.Any;
+import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.MapEntry;
 import com.google.protobuf.util.JsonFormat;
 import com.datastax.driver.core.Session;
@@ -36,6 +37,8 @@ import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.exceptions.JedisConnectionException;
 
 import javax.xml.crypto.Data;
+import java.sql.Timestamp;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -59,39 +62,53 @@ public class CassandraBackedJobService implements JobService {
   @Override
   public Optional<Job> get(String id) {
     Job job = null;
-    try {
-      ResultSet res =  session.execute(
-              QueryBuilder.select()
-                      .column("job_uuid")
-                      .column("value")
-                      .writeTime("value")
-                      .as("writetime")
-                      .from("admin", "jobs")
-                      .where(QueryBuilder.eq("job_uuid", id)));
-      JsonObject result = new JsonObject();
-      Builder builder = Job.newBuilder();
-      while (!res.isExhausted()) {
-        Row r = res.one();
-        ColumnDefinitions defs = r.getColumnDefinitions();
-        for (int i = 0; i < defs.size(); i++) {
-          result.addProperty(defs.getName(i), r.getString(i));
+    Job latestJob = Job.newBuilder().build();
+    ResultSet res =  session.execute(
+            QueryBuilder.select()
+                    .column("job_uuid")
+                    .column("job_data")
+                    .column("timestamp")
+                    .from("admin", "jobs")
+                    .where(QueryBuilder.eq("job_uuid", id)));
+    JsonObject result = new JsonObject();
+    Date timestamp = new Date(0);
+    while (!res.isExhausted()) {
+      Row r = res.one();
+      ColumnDefinitions defs = r.getColumnDefinitions();
+      Date newTs = new Date(0);
+      for (int i = 0; i < defs.size(); i++) {
+        if (defs.getName(i).equals("timestamp")) {
+          log.info("The ts data is {}", r.getTimestamp(i));
+          if (r.getTimestamp(i).compareTo(timestamp) > 0) {
+            newTs = r.getTimestamp(i);
+          }
+        }
+        if (defs.getName(i).equals("job_data")) {
+          log.info("The job data is {}", r.getString(i));
+          Builder builder = Job.newBuilder();
+          try {
+            JsonFormat.parser().merge(r.getString(i), builder);
+            job = builder.build();
+          } catch (InvalidProtocolBufferException e) {
+            throw new IllegalStateException("Could not build job from %s", e);
+          }
         }
       }
-      if (result == null) {
-        return Optional.empty();
+      if (newTs.compareTo(timestamp) > 0) {
+        log.info("Transferring to latest job {}", job);
+        latestJob = job;
       }
-      JsonFormat.parser().merge(result.toString(), builder);
-      job = builder.build();
-    } catch (Exception e) {
-      log.error(String.format("Failed to parse JSON for Feast job: %s", e.getMessage()));
     }
-    return Optional.ofNullable(job);
+    return Optional.ofNullable(latestJob);
   }
 
   @Override
   public void upsert(Job job) {
     try {
-      session.execute(QueryBuilder.update(job.getId(), JsonFormat.printer().omittingInsignificantWhitespace().print(job)));
+      session.execute(QueryBuilder.insertInto("admin", "jobs")
+              .value("job_uuid", job.getId())
+              .value("timestamp", System.currentTimeMillis())
+              .value("job_data", JsonFormat.printer().omittingInsignificantWhitespace().print(job)));
     } catch (Exception e) {
       log.error(String.format("Failed to upsert job: %s", e.getMessage()));
     }

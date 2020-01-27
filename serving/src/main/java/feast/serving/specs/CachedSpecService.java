@@ -113,9 +113,11 @@ public class CachedSpecService {
     featureReferences.stream()
         .map(
             featureReference -> {
+              log.info("FS reference {}", generateFeatureStringRef(featureReference));
               String featureSet =
                   featureToFeatureSetMapping.getOrDefault(
                       generateFeatureStringRef(featureReference), "");
+              log.info("FS {}", featureSet);
               if (featureSet.isEmpty()) {
                 throw new SpecRetrievalException(
                     String.format("Unable to retrieve feature %s", featureReference));
@@ -195,7 +197,7 @@ public class CachedSpecService {
   private Map<String, String> getFeatureToFeatureSetMapping(
       Map<String, FeatureSetSpec> featureSets) {
     HashMap<String, String> mapping = new HashMap<>();
-
+    log.info("Getting feature to FS mapping for {}", featureSets);
     featureSets.values().stream()
         .collect(
             groupingBy(
@@ -210,6 +212,7 @@ public class CachedSpecService {
                       .collect(Collectors.toList());
               for (int i = 0; i < groupedFeatureSets.size(); i++) {
                 FeatureSetSpec featureSetSpec = groupedFeatureSets.get(i);
+                log.info("Found FS Spec: {}", featureSetSpec);
                 for (FeatureSpec featureSpec : featureSetSpec.getFeaturesList()) {
                   FeatureReference featureRef =
                       FeatureReference.newBuilder()

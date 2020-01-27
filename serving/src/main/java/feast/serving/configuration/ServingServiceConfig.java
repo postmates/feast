@@ -20,6 +20,8 @@ import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.HostDistance;
 import com.datastax.driver.core.PoolingOptions;
 import com.datastax.driver.core.Session;
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.google.cloud.bigquery.BigQuery;
 import com.google.cloud.bigquery.BigQueryOptions;
 import com.google.cloud.storage.Storage;
@@ -41,6 +43,10 @@ import feast.serving.service.RedisServingService;
 import feast.serving.service.ServingService;
 import feast.serving.specs.CachedSpecService;
 import io.opentracing.Tracer;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.List;
@@ -110,7 +116,20 @@ public class ServingServiceConfig {
         break;
       case BIGQUERY:
         BigQueryConfig bqConfig = store.getBigqueryConfig();
-        BigQuery bigquery = BigQueryOptions.getDefaultInstance().getService();
+        //BigQuery bigquery = BigQueryOptions.getDefaultInstance().getService();
+        log.info(BigQueryOptions.getDefaultInstance().getLocation());
+        log.info(BigQueryOptions.getDefaultInstance().getCredentials().toString());
+        log.info(BigQueryOptions.getDefaultInstance().getCredentials().toString());
+        log.info(BigQueryOptions.getDefaultInstance().getApplicationName());
+        GoogleCredentials credentials;
+        File credentialsPath = new File("/etc/gcloud/service-accounts/credentials.json");  // TODO: update to your key path.
+        try (FileInputStream serviceAccountStream = new FileInputStream(credentialsPath)) {
+          credentials = ServiceAccountCredentials.fromStream(serviceAccountStream);
+        } catch (Exception e) {
+          throw new IllegalStateException("No credentials file found", e);
+        }
+        BigQuery bigquery =
+                BigQueryOptions.newBuilder().setCredentials(credentials).setProjectId("features-stage-14344").build().getService();
         Storage storage = StorageOptions.getDefaultInstance().getService();
         String jobStagingLocation = feastProperties.getJobs().getStagingLocation();
         if (!jobStagingLocation.contains("://")) {

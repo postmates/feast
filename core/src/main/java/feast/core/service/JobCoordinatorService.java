@@ -54,137 +54,151 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class JobCoordinatorService {
 
-  private final long POLLING_INTERVAL_MILLISECONDS = 60000; // 1 min
-  private JobRepository jobRepository;
-  private FeatureSetRepository featureSetRepository;
-  private SpecService specService;
-  private JobManager jobManager;
-  private JobUpdatesProperties jobUpdatesProperties;
+    private final long POLLING_INTERVAL_MILLISECONDS = 60000; // 1 min
+    private JobRepository jobRepository;
+    private FeatureSetRepository featureSetRepository;
+    private SpecService specService;
+    private JobManager jobManager;
+    private JobUpdatesProperties jobUpdatesProperties;
 
-  @Autowired
-  public JobCoordinatorService(
-      JobRepository jobRepository,
-      FeatureSetRepository featureSetRepository,
-      SpecService specService,
-      JobManager jobManager,
-      JobUpdatesProperties jobUpdatesProperties) {
-    this.jobRepository = jobRepository;
-    this.featureSetRepository = featureSetRepository;
-    this.specService = specService;
-    this.jobManager = jobManager;
-    this.jobUpdatesProperties = jobUpdatesProperties;
-  }
+    @Autowired
+    public JobCoordinatorService(
+            JobRepository jobRepository,
+            FeatureSetRepository featureSetRepository,
+            SpecService specService,
+            JobManager jobManager,
+            JobUpdatesProperties jobUpdatesProperties) {
+        this.jobRepository = jobRepository;
+        this.featureSetRepository = featureSetRepository;
+        this.specService = specService;
+        this.jobManager = jobManager;
+        this.jobUpdatesProperties = jobUpdatesProperties;
+    }
 
-  /**
-   * Poll does the following:
-   *
-   * <p>1) Checks DB and extracts jobs that have to run based on the specs available
-   *
-   * <p>2) Does a diff with the current set of jobs, starts/updates job(s) if necessary
-   *
-   * <p>3) Updates job object in DB with status, feature sets
-   *
-   * <p>4) Updates Feature set statuses
-   */
-  @Transactional
-  @Scheduled(fixedDelay = POLLING_INTERVAL_MILLISECONDS)
-  public void Poll() throws InvalidProtocolBufferException {
-    log.info("Polling for new jobs...");
-    List<JobUpdateTask> jobUpdateTasks = new ArrayList<>();
-    ListStoresResponse listStoresResponse = specService.listStores(Filter.newBuilder().build());
-    for (StoreProto.Store store : listStoresResponse.getStoreList()) {
-      Set<FeatureSetProto.FeatureSet> featureSets = new HashSet<>();
-      for (Subscription subscription : store.getSubscriptionsList()) {
-        featureSets.addAll(
-            new ArrayList<>(
-                specService
-                    .listFeatureSets(
-                        ListFeatureSetsRequest.Filter.newBuilder()
-                            .setFeatureSetName(subscription.getName())
-                            .setFeatureSetVersion(subscription.getVersion())
-                            .setProject(subscription.getProject())
-                            .build())
-                    .getFeatureSetsList()));
-      }
-      if (!featureSets.isEmpty()) {
-        featureSets.stream()
-            .collect(Collectors.groupingBy(fs -> fs.getSpec().getSource()))
-            .entrySet()
-            .stream()
-            .forEach(
-                kv -> {
-                  Optional<Job> originalJob =
-                      getJob(Source.fromProto(kv.getKey()), Store.fromProto(store));
-                  jobUpdateTasks.add(
-                      new JobUpdateTask(
-                          kv.getValue(),
-                          kv.getKey(),
-                          store,
-                          originalJob,
-                          jobManager,
-                          jobUpdatesProperties.getTimeoutSeconds()));
+    /**
+     * Poll does the following:
+     *
+     * <p>1) Checks DB and extracts jobs that have to run based on the specs available
+     *
+     * <p>2) Does a diff with the current set of jobs, starts/updates job(s) if necessary
+     *
+     * <p>3) Updates job object in DB with status, feature sets
+     *
+     * <p>4) Updates Feature set statuses
+     */
+    @Transactional
+    @Scheduled(fixedDelay = POLLING_INTERVAL_MILLISECONDS)
+    public void Poll() throws InvalidProtocolBufferException {
+        log.info("Polling for new jobs...");
+        List<JobUpdateTask> jobUpdateTasks = new ArrayList<>();
+        ListStoresResponse listStoresResponse = specService.listStores(Filter.newBuilder().build());
+        for (StoreProto.Store store : listStoresResponse.getStoreList()) {
+            Set<FeatureSetProto.FeatureSet> featureSets = new HashSet<>();
+            for (Subscription subscription : store.getSubscriptionsList()) {
+                featureSets.addAll(
+                        new ArrayList<>(
+                                specService
+                                        .listFeatureSets(
+                                                ListFeatureSetsRequest.Filter.newBuilder()
+                                                        .setFeatureSetName(subscription.getName())
+                                                        .setFeatureSetVersion(subscription.getVersion())
+                                                        .setProject(subscription.getProject())
+                                                        .build())
+                                        .getFeatureSetsList()));
+            }
+            if (!featureSets.isEmpty()) {
+                featureSets.stream()
+                        .collect(Collectors.groupingBy(fs -> fs.getSpec().getSource()))
+                        .entrySet()
+                        .stream()
+                        .forEach(
+                                kv -> {
+                                    Optional<Job> originalJob =
+                                            getJob(Source.fromProto(kv.getKey()), Store.fromProto(store));
+                                    jobUpdateTasks.add(
+                                            new JobUpdateTask(
+                                                    kv.getValue(),
+                                                    kv.getKey(),
+                                                    store,
+                                                    originalJob,
+                                                    jobManager,
+                                                    jobUpdatesProperties.getTimeoutSeconds()));
+                                });
+            }
+        }
+        if (jobUpdateTasks.size() == 0) {
+            log.info("No jobs found.");
+            return;
+        }
+
+        log.info("Creating/Updating {} jobs...", jobUpdateTasks.size());
+        ExecutorService executorService = Executors.newFixedThreadPool(jobUpdateTasks.size());
+        ExecutorCompletionService<Job> ecs = new ExecutorCompletionService<>(executorService);
+        jobUpdateTasks.forEach(ecs::submit);
+
+        int completedTasks = 0;
+        while (completedTasks < jobUpdateTasks.size()) {
+            try {
+                Job job = ecs.take().get();
+                if (job != null) {
+                    jobRepository.saveAndFlush(job);
+                }
+            } catch (ExecutionException | InterruptedException e) {
+                log.warn("Unable to start or update job: {}", e.getMessage());
+            } catch (Exception e) {
+                log.info("Unexpeced Exception :{}", e.getMessage());
+            }
+            completedTasks++;
+        }
+
+        log.info("Updating feature set status. {} tasks completed out of {}", jobUpdateTasks.size(), completedTasks);
+        updateFeatureSetStatuses(jobUpdateTasks);
+    }
+
+    // TODO: make this more efficient
+    private void updateFeatureSetStatuses(List<JobUpdateTask> jobUpdateTasks) {
+        Set<FeatureSet> ready = new HashSet<>();
+        Set<FeatureSet> pending = new HashSet<>();
+        for (JobUpdateTask jobUpdateTask : jobUpdateTasks) {
+            Optional<Job> job =
+                    getJob(
+                            Source.fromProto(jobUpdateTask.getSourceSpec()),
+                            Store.fromProto(jobUpdateTask.getStore()));
+            if (job.isPresent()) {
+                if (job.get().getStatus() == JobStatus.RUNNING) {
+                    ready.addAll(job.get().getFeatureSets());
+                } else {
+                    pending.addAll(job.get().getFeatureSets());
+                }
+            }
+        }
+        ready.removeAll(pending);
+        ready.forEach(
+                fs -> {
+                    fs.setStatus(FeatureSetStatus.STATUS_READY.toString());
+                    featureSetRepository.save(fs);
                 });
-      }
-    }
-    if (jobUpdateTasks.size() == 0) {
-      log.info("No jobs found.");
-      return;
+        pending.forEach(
+                fs -> {
+                    fs.setStatus(FeatureSetStatus.STATUS_PENDING.toString());
+                    featureSetRepository.save(fs);
+                });
+        featureSetRepository.flush();
     }
 
-    log.info("Creating/Updating {} jobs...", jobUpdateTasks.size());
-    ExecutorService executorService = Executors.newFixedThreadPool(jobUpdateTasks.size());
-    ExecutorCompletionService<Job> ecs = new ExecutorCompletionService<>(executorService);
-    jobUpdateTasks.forEach(ecs::submit);
-
-    int completedTasks = 0;
-    while (completedTasks < jobUpdateTasks.size()) {
-      try {
-        Job job = ecs.take().get();
-        if (job != null) {
-          jobRepository.saveAndFlush(job);
+    @Transactional
+    public Optional<Job> getJob(Source source, Store store) {
+        List<Job> jobs =
+                jobRepository.findBySourceIdAndStoreNameOrderByLastUpdatedDesc(
+                        source.getId(), store.getName());
+        jobs =
+                jobs.stream()
+                        .filter(job -> !JobStatus.getTerminalState().contains(job.getStatus()))
+                        .collect(Collectors.toList());
+        if (jobs.size() == 0) {
+            return Optional.empty();
         }
-      } catch (ExecutionException | InterruptedException e) {
-        log.warn("Unable to start or update job: {}", e.getMessage());
-      }
-      completedTasks++;
+        // return the latest
+        return Optional.of(jobs.get(0));
     }
-
-    log.info("Updating feature set status");
-    updateFeatureSetStatuses(jobUpdateTasks);
-  }
-
-  // TODO: make this more efficient
-  private void updateFeatureSetStatuses(List<JobUpdateTask> jobUpdateTasks) {
-    Set<FeatureSet> ready = new HashSet<>();
-    Set<FeatureSet> pending = new HashSet<>();
-    for (JobUpdateTask jobUpdateTask : jobUpdateTasks) {
-      Optional<Job> job =
-          getJob(
-              Source.fromProto(jobUpdateTask.getSourceSpec()),
-              Store.fromProto(jobUpdateTask.getStore()));
-      if (job.isPresent()) {
-        if (job.get().getStatus() == JobStatus.RUNNING) {
-          ready.addAll(job.get().getFeatureSets());
-        } else {
-          pending.addAll(job.get().getFeatureSets());
-        }
-      }
-    }
-  }
-
-  @Transactional
-  public Optional<Job> getJob(Source source, Store store) {
-    List<Job> jobs =
-        jobRepository.findBySourceIdAndStoreNameOrderByLastUpdatedDesc(
-            source.getId(), store.getName());
-    jobs =
-        jobs.stream()
-            .filter(job -> !JobStatus.getTerminalState().contains(job.getStatus()))
-            .collect(Collectors.toList());
-    if (jobs.size() == 0) {
-      return Optional.empty();
-    }
-    // return the latest
-    return Optional.of(jobs.get(0));
-  }
 }
