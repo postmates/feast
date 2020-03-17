@@ -30,13 +30,20 @@ import feast.core.StoreProto.Store;
 import feast.core.StoreProto.Store.RedisConfig;
 import feast.core.StoreProto.Store.StoreType;
 import feast.core.StoreProto.Store.Subscription;
+import feast.ingestion.options.BZip2Compressor;
 import feast.ingestion.options.ImportOptions;
 import feast.storage.RedisProto.RedisKey;
 import feast.test.TestUtil;
 import feast.test.TestUtil.LocalKafka;
 import feast.test.TestUtil.LocalRedis;
 import feast.types.FeatureRowProto.FeatureRow;
+import feast.types.FieldProto;
 import feast.types.ValueProto.ValueType.Enum;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisURI;
+import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.api.sync.RedisCommands;
+import io.lettuce.core.codec.ByteArrayCodec;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -44,6 +51,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.PipelineResult.State;
@@ -56,7 +64,6 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import redis.clients.jedis.Jedis;
 
 public class ImportJobTest {
 
@@ -162,12 +169,15 @@ public class ImportJobTest {
             .build();
 
     ImportOptions options = PipelineOptionsFactory.create().as(ImportOptions.class);
-    options.setFeatureSetJson(
-        Collections.singletonList(
-            JsonFormat.printer().omittingInsignificantWhitespace().print(featureSet.getSpec())));
-    options.setStoreJson(
-        Collections.singletonList(
-            JsonFormat.printer().omittingInsignificantWhitespace().print(redis)));
+    BZip2Compressor<FeatureSetSpec> compressor =
+        new BZip2Compressor<>(
+            option -> {
+              JsonFormat.Printer printer =
+                  JsonFormat.printer().omittingInsignificantWhitespace().printingEnumsAsInts();
+              return printer.print(option).getBytes();
+            });
+    options.setFeatureSetJson(compressor.compress(spec));
+    options.setStoreJson(Collections.singletonList(JsonFormat.printer().print(redis)));
     options.setProject("");
     options.setBlockOnRun(false);
 
@@ -181,6 +191,23 @@ public class ImportJobTest {
               FeatureRow randomRow = TestUtil.createRandomFeatureRow(featureSet);
               RedisKey redisKey = TestUtil.createRedisKey(featureSet, randomRow);
               input.add(randomRow);
+              List<FieldProto.Field> fields =
+                  randomRow.getFieldsList().stream()
+                      .filter(
+                          field ->
+                              spec.getFeaturesList().stream()
+                                  .map(FeatureSpec::getName)
+                                  .collect(Collectors.toList())
+                                  .contains(field.getName()))
+                      .map(field -> field.toBuilder().clearName().build())
+                      .collect(Collectors.toList());
+              randomRow =
+                  randomRow
+                      .toBuilder()
+                      .clearFields()
+                      .addAllFields(fields)
+                      .clearFeatureSet()
+                      .build();
               expected.put(redisKey, randomRow);
             });
 
@@ -202,21 +229,24 @@ public class ImportJobTest {
         Duration.standardSeconds(IMPORT_JOB_CHECK_INTERVAL_DURATION_SEC));
 
     LOGGER.info("Validating the actual values written to Redis ...");
-    Jedis jedis = new Jedis(REDIS_HOST, REDIS_PORT);
+    RedisClient redisClient =
+        RedisClient.create(new RedisURI(REDIS_HOST, REDIS_PORT, java.time.Duration.ofMillis(2000)));
+    StatefulRedisConnection<byte[], byte[]> connection = redisClient.connect(new ByteArrayCodec());
+    RedisCommands<byte[], byte[]> sync = connection.sync();
     expected.forEach(
         (key, expectedValue) -> {
 
           // Ensure ingested key exists.
-          byte[] actualByteValue = jedis.get(key.toByteArray());
+          byte[] actualByteValue = sync.get(key.toByteArray());
           if (actualByteValue == null) {
             LOGGER.error("Key not found in Redis: " + key);
             LOGGER.info("Redis INFO:");
-            LOGGER.info(jedis.info());
-            String randomKey = jedis.randomKey();
+            LOGGER.info(sync.info());
+            byte[] randomKey = sync.randomkey();
             if (randomKey != null) {
               LOGGER.info("Sample random key, value (for debugging purpose):");
               LOGGER.info("Key: " + randomKey);
-              LOGGER.info("Value: " + jedis.get(randomKey));
+              LOGGER.info("Value: " + sync.get(randomKey));
             }
             Assert.fail("Missing key in Redis.");
           }
@@ -235,5 +265,6 @@ public class ImportJobTest {
           // Ensure the retrieved FeatureRow is equal to the ingested FeatureRow.
           Assert.assertEquals(expectedValue, actualValue);
         });
+    redisClient.shutdown();
   }
 }

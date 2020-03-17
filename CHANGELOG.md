@@ -1,5 +1,49 @@
 # Changelog
 
+## [v0.4.6](https://github.com/gojek/feast/tree/v0.4.6) (2020-02-26)
+
+[Full Changelog](https://github.com/gojek/feast/compare/v0.4.5...v0.4.6)
+
+**Merged pull requests:**
+- Rename metric name for request latency in feast serving [\#488](https://github.com/gojek/feast/pull/488) ([davidheryanto](https://github.com/davidheryanto))
+- Allow use of secure gRPC in Feast Python client [\#459](https://github.com/gojek/feast/pull/459) ([Yanson](https://github.com/Yanson))
+- Extend WriteMetricsTransform in Ingestion to write feature value stats to StatsD [\#486](https://github.com/gojek/feast/pull/486) ([davidheryanto](https://github.com/davidheryanto))
+- Remove transaction from Ingestion [\#480](https://github.com/gojek/feast/pull/480) ([imjuanleonard](https://github.com/imjuanleonard))
+- Fix fastavro version used in Feast to avoid Timestamp delta error [\#490](https://github.com/gojek/feast/pull/490) ([davidheryanto](https://github.com/davidheryanto))
+- Fail Spotless formatting check before tests execute [\#487](https://github.com/gojek/feast/pull/487) ([ches](https://github.com/ches))
+- Reduce refresh rate of specification refresh in Serving to 10 seconds [\#481](https://github.com/gojek/feast/pull/481) ([woop](https://github.com/woop))
+
+## [v0.4.5](https://github.com/gojek/feast/tree/v0.4.5) (2020-02-14)
+
+[Full Changelog](https://github.com/gojek/feast/compare/v0.4.4...v0.4.5)
+
+**Merged pull requests:**
+- Use bzip2 compressed feature set json as pipeline option [\#466](https://github.com/gojek/feast/pull/466) ([khorshuheng](https://github.com/khorshuheng))
+- Make redis key creation more determinisitic [\#471](https://github.com/gojek/feast/pull/471) ([zhilingc](https://github.com/zhilingc))
+- Helm Chart Upgrades [\#458](https://github.com/gojek/feast/pull/458) ([Yanson](https://github.com/Yanson))
+- Exclude version from grouping [\#441](https://github.com/gojek/feast/pull/441) ([khorshuheng](https://github.com/khorshuheng))
+- Use concrete class for AvroCoder compatibility [\#465](https://github.com/gojek/feast/pull/465) ([zhilingc](https://github.com/zhilingc))
+- Fix typo in split string length check [\#464](https://github.com/gojek/feast/pull/464) ([zhilingc](https://github.com/zhilingc))
+- Update README.md and remove versions from Helm Charts [\#457](https://github.com/gojek/feast/pull/457) ([woop](https://github.com/woop))
+- Deduplicate example notebooks [\#456](https://github.com/gojek/feast/pull/456) ([woop](https://github.com/woop))
+- Allow users not to set max age for batch retrieval [\#446](https://github.com/gojek/feast/pull/446) ([zhilingc](https://github.com/zhilingc))
+
+## [v0.4.4](https://github.com/gojek/feast/tree/v0.4.4) (2020-01-28)
+
+[Full Changelog](https://github.com/gojek/feast/compare/v0.4.3...v0.4.4)
+
+**Merged pull requests:**
+
+- Change RedisBackedJobService to use a connection pool [\#439](https://github.com/gojek/feast/pull/439) ([zhilingc](https://github.com/zhilingc))
+- Update GKE installation and chart values to work with 0.4.3 [\#434](https://github.com/gojek/feast/pull/434) ([lgvital](https://github.com/lgvital))
+- Remove "resource" concept and the need to specify a kind in feature sets [\#432](https://github.com/gojek/feast/pull/432) ([woop](https://github.com/woop))
+- Add retry options to BigQuery [\#431](https://github.com/gojek/feast/pull/431) ([Yanson](https://github.com/Yanson))
+- Fix logging [\#430](https://github.com/gojek/feast/pull/430) ([Yanson](https://github.com/Yanson))
+- Add documentation for bigquery batch retrieval [\#428](https://github.com/gojek/feast/pull/428) ([zhilingc](https://github.com/zhilingc))
+- Publish datatypes/java along with sdk/java [\#426](https://github.com/gojek/feast/pull/426) ([ches](https://github.com/ches))
+- Update basic Feast example to Feast 0.4 [\#424](https://github.com/gojek/feast/pull/424) ([woop](https://github.com/woop))
+- Introduce datatypes/java module for proto generation [\#391](https://github.com/gojek/feast/pull/391) ([ches](https://github.com/ches))
+
 ## [v0.4.3](https://github.com/gojek/feast/tree/v0.4.3) (2020-01-08)
 
 [Full Changelog](https://github.com/gojek/feast/compare/v0.4.2...v0.4.3)

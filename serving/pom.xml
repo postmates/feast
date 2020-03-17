@@ -98,6 +98,10 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-log4j2</artifactId>
     </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-web</artifactId>
+    </dependency>
 
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -138,12 +142,23 @@
       <version>3.1.0</version>
     </dependency>
 
-    <!--compile 'redis.clients:jedis:2.9.0'-->
     <dependency>
-      <groupId>redis.clients</groupId>
-      <artifactId>jedis</artifactId>
+      <groupId>io.lettuce</groupId>
+      <artifactId>lettuce-core</artifactId>
     </dependency>
-    <!--compile 'com.google.guava:guava:26.0-jre'-->
+    <!--compile 'com.datastax.cassandra:cassandra-driver-core:3.4.0'-->
+    <dependency>
+      <groupId>com.datastax.cassandra</groupId>
+      <artifactId>cassandra-driver-core</artifactId>
+      <version>3.4.0</version>
+      <exclusions>
+        <exclusion>
+          <groupId>io.netty</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <!--compile 'com.google.guava:guava:25.0-jre'-->
     <dependency>
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
@@ -227,6 +242,13 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!--testCompile 'org.cassandraunit:cassandra-unit-shaded:3.11.2.0'-->
+    <dependency>
+      <groupId>org.cassandraunit</groupId>
+      <artifactId>cassandra-unit-shaded</artifactId>
+      <version>3.11.2.0</version>
       <scope>test</scope>
     </dependency>
 

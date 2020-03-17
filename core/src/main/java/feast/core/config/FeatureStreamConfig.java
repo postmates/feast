@@ -16,7 +16,6 @@
  */
 package feast.core.config;
 
-import com.google.common.base.Strings;
 import feast.core.SourceProto.KafkaSourceConfig;
 import feast.core.SourceProto.SourceType;
 import feast.core.config.FeastProperties.StreamProperties;
@@ -69,7 +68,7 @@ public class FeatureStreamConfig {
         } catch (InterruptedException | ExecutionException e) {
           if (e.getCause().getClass().equals(TopicExistsException.class)) {
             log.warn(
-                Strings.lenientFormat(
+                String.format(
                     "Unable to create topic %s in the feature stream, topic already exists, using existing topic.",
                     topicName));
           } else {

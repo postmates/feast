@@ -16,6 +16,7 @@
  */
 package feast.serving.service;
 
+import static feast.serving.util.Metrics.invalidEncodingCount;
 import static feast.serving.util.Metrics.missingKeyCount;
 import static feast.serving.util.Metrics.requestCount;
 import static feast.serving.util.Metrics.requestLatency;
@@ -41,6 +42,7 @@ import feast.serving.ServingAPIProto.GetOnlineFeaturesRequest;
 import feast.serving.ServingAPIProto.GetOnlineFeaturesRequest.EntityRow;
 import feast.serving.ServingAPIProto.GetOnlineFeaturesResponse;
 import feast.serving.ServingAPIProto.GetOnlineFeaturesResponse.FieldValues;
+import feast.serving.encoding.FeatureRowDecoder;
 import feast.serving.specs.CachedSpecService;
 import feast.serving.specs.FeatureSetRequest;
 import feast.serving.util.RefUtil;
@@ -49,24 +51,28 @@ import feast.types.FeatureRowProto.FeatureRow;
 import feast.types.FieldProto.Field;
 import feast.types.ValueProto.Value;
 import io.grpc.Status;
+import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.api.sync.RedisCommands;
 import io.opentracing.Scope;
 import io.opentracing.Tracer;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
 
 public class RedisServingService implements ServingService {
 
   private static final Logger log = org.slf4j.LoggerFactory.getLogger(RedisServingService.class);
-  private final JedisPool jedisPool;
   private final CachedSpecService specService;
   private final Tracer tracer;
+  private final RedisCommands<byte[], byte[]> syncCommands;
 
-  public RedisServingService(JedisPool jedisPool, CachedSpecService specService, Tracer tracer) {
-    this.jedisPool = jedisPool;
+  public RedisServingService(
+      StatefulRedisConnection<byte[], byte[]> connection,
+      CachedSpecService specService,
+      Tracer tracer) {
+    this.syncCommands = connection.sync();
     this.specService = specService;
     this.tracer = tracer;
   }
@@ -84,7 +90,6 @@ public class RedisServingService implements ServingService {
   @Override
   public GetOnlineFeaturesResponse getOnlineFeatures(GetOnlineFeaturesRequest request) {
     try (Scope scope = tracer.buildSpan("Redis-getOnlineFeatures").startActive(true)) {
-      long startTime = System.currentTimeMillis();
       GetOnlineFeaturesResponse.Builder getOnlineFeaturesResponseBuilder =
           GetOnlineFeaturesResponse.newBuilder();
 
@@ -106,7 +111,7 @@ public class RedisServingService implements ServingService {
 
         try {
           sendAndProcessMultiGet(redisKeys, entityRows, featureValuesMap, featureSetRequest);
-        } catch (InvalidProtocolBufferException e) {
+        } catch (InvalidProtocolBufferException | ExecutionException e) {
           throw Status.INTERNAL
               .withDescription("Unable to parse protobuf while retrieving feature")
               .withCause(e)
@@ -117,9 +122,6 @@ public class RedisServingService implements ServingService {
           featureValuesMap.values().stream()
               .map(valueMap -> FieldValues.newBuilder().putAllFields(valueMap).build())
               .collect(Collectors.toList());
-      requestLatency
-          .labels("getOnlineFeatures")
-          .observe((System.currentTimeMillis() - startTime) / 1000);
       return getOnlineFeaturesResponseBuilder.addAllFieldValues(fieldValues).build();
     }
   }
@@ -192,9 +194,9 @@ public class RedisServingService implements ServingService {
       List<EntityRow> entityRows,
       Map<EntityRow, Map<String, Value>> featureValuesMap,
       FeatureSetRequest featureSetRequest)
-      throws InvalidProtocolBufferException {
+      throws InvalidProtocolBufferException, ExecutionException {
 
-    List<byte[]> jedisResps = sendMultiGet(redisKeys);
+    List<byte[]> values = sendMultiGet(redisKeys);
     long startTime = System.currentTimeMillis();
     try (Scope scope = tracer.buildSpan("Redis-processResponse").startActive(true)) {
       FeatureSetSpec spec = featureSetRequest.getSpec();
@@ -206,12 +208,12 @@ public class RedisServingService implements ServingService {
                       RefUtil::generateFeatureStringRef,
                       featureReference -> Value.newBuilder().build()));
 
-      for (int i = 0; i < jedisResps.size(); i++) {
+      for (int i = 0; i < values.size(); i++) {
         EntityRow entityRow = entityRows.get(i);
         Map<String, Value> featureValues = featureValuesMap.get(entityRow);
 
-        byte[] jedisResponse = jedisResps.get(i);
-        if (jedisResponse == null) {
+        byte[] value = values.get(i);
+        if (value == null) {
           featureSetRequest
               .getFeatureReferences()
               .parallelStream()
@@ -226,7 +228,28 @@ public class RedisServingService implements ServingService {
           continue;
         }
 
-        FeatureRow featureRow = FeatureRow.parseFrom(jedisResponse);
+        FeatureRow featureRow = FeatureRow.parseFrom(value);
+        String featureSetRef = redisKeys.get(i).getFeatureSet();
+        FeatureRowDecoder decoder =
+            new FeatureRowDecoder(featureSetRef, specService.getFeatureSetSpec(featureSetRef));
+        if (decoder.isEncoded(featureRow)) {
+          if (decoder.isEncodingValid(featureRow)) {
+            featureRow = decoder.decode(featureRow);
+          } else {
+            featureSetRequest
+                .getFeatureReferences()
+                .parallelStream()
+                .forEach(
+                    request ->
+                        invalidEncodingCount
+                            .labels(
+                                spec.getProject(),
+                                String.format("%s:%d", request.getName(), request.getVersion()))
+                            .inc());
+            featureValues.putAll(nullValues);
+            continue;
+          }
+        }
 
         boolean stale = isStale(featureSetRequest, entityRow, featureRow);
         if (stale) {
@@ -298,13 +321,15 @@ public class RedisServingService implements ServingService {
   private List<byte[]> sendMultiGet(List<RedisKey> keys) {
     try (Scope scope = tracer.buildSpan("Redis-sendMultiGet").startActive(true)) {
       long startTime = System.currentTimeMillis();
-      try (Jedis jedis = jedisPool.getResource()) {
+      try {
         byte[][] binaryKeys =
             keys.stream()
                 .map(AbstractMessageLite::toByteArray)
                 .collect(Collectors.toList())
                 .toArray(new byte[0][0]);
-        return jedis.mget(binaryKeys);
+        return syncCommands.mget(binaryKeys).stream()
+            .map(io.lettuce.core.Value::getValue)
+            .collect(Collectors.toList());
       } catch (Exception e) {
         throw Status.NOT_FOUND
             .withDescription("Unable to retrieve feature from Redis")
@@ -313,7 +338,7 @@ public class RedisServingService implements ServingService {
       } finally {
         requestLatency
             .labels("sendMultiGet")
-            .observe((System.currentTimeMillis() - startTime) / 1000);
+            .observe((System.currentTimeMillis() - startTime) / 1000d);
       }
     }
   }

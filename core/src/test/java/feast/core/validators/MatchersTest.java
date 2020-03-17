@@ -19,7 +19,6 @@ package feast.core.validators;
 import static feast.core.validators.Matchers.checkLowerSnakeCase;
 import static feast.core.validators.Matchers.checkUpperSnakeCase;
 
-import com.google.common.base.Strings;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -43,7 +42,7 @@ public class MatchersTest {
   public void checkUpperSnakeCaseShouldThrowIllegalArgumentExceptionWithFieldForInvalidString() {
     exception.expect(IllegalArgumentException.class);
     exception.expectMessage(
-        Strings.lenientFormat(
+        String.format(
             "invalid value for field %s: %s",
             "someField",
             "argument must be in upper snake case, and cannot include any special characters."));
@@ -61,7 +60,7 @@ public class MatchersTest {
   public void checkLowerSnakeCaseShouldThrowIllegalArgumentExceptionWithFieldForInvalidString() {
     exception.expect(IllegalArgumentException.class);
     exception.expectMessage(
-        Strings.lenientFormat(
+        String.format(
             "invalid value for field %s: %s",
             "someField",
             "argument must be in lower snake case, and cannot include any special characters."));

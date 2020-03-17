@@ -145,11 +145,16 @@ public class JobCoordinatorService {
         }
       } catch (ExecutionException | InterruptedException e) {
         log.warn("Unable to start or update job: {}", e.getMessage());
+      } catch (Exception e) {
+        log.info("Unexpeced Exception :{}", e.getMessage());
       }
       completedTasks++;
     }
 
-    log.info("Updating feature set status");
+    log.info(
+        "Updating feature set status. {} tasks completed out of {}",
+        jobUpdateTasks.size(),
+        completedTasks);
     updateFeatureSetStatuses(jobUpdateTasks);
   }
 

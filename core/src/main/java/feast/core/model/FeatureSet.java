@@ -55,6 +55,7 @@ import org.tensorflow.metadata.v0.FixedShape;
 import org.tensorflow.metadata.v0.FloatDomain;
 import org.tensorflow.metadata.v0.ImageDomain;
 import org.tensorflow.metadata.v0.IntDomain;
+import org.tensorflow.metadata.v0.MIDDomain;
 import org.tensorflow.metadata.v0.NaturalLanguageDomain;
 import org.tensorflow.metadata.v0.StringDomain;
 import org.tensorflow.metadata.v0.StructDomain;
@@ -264,8 +265,8 @@ public class FeatureSet extends AbstractTimestampEntity implements Comparable<Fe
     if (entityField.getPresence() != null) {
       entitySpecBuilder.setPresence(FeaturePresence.parseFrom(entityField.getPresence()));
     } else if (entityField.getGroupPresence() != null) {
-      entitySpecBuilder
-          .setGroupPresence(FeaturePresenceWithinGroup.parseFrom(entityField.getGroupPresence()));
+      entitySpecBuilder.setGroupPresence(
+          FeaturePresenceWithinGroup.parseFrom(entityField.getGroupPresence()));
     }
 
     if (entityField.getShape() != null) {
@@ -298,8 +299,8 @@ public class FeatureSet extends AbstractTimestampEntity implements Comparable<Fe
     } else if (entityField.getTimeDomain() != null) {
       entitySpecBuilder.setTimeDomain(TimeDomain.parseFrom(entityField.getTimeDomain()));
     } else if (entityField.getTimeOfDayDomain() != null) {
-      entitySpecBuilder
-          .setTimeOfDayDomain(TimeOfDayDomain.parseFrom(entityField.getTimeOfDayDomain()));
+      entitySpecBuilder.setTimeOfDayDomain(
+          TimeOfDayDomain.parseFrom(entityField.getTimeOfDayDomain()));
     }
   }
 
@@ -314,8 +315,8 @@ public class FeatureSet extends AbstractTimestampEntity implements Comparable<Fe
     if (featureField.getPresence() != null) {
       featureSpecBuilder.setPresence(FeaturePresence.parseFrom(featureField.getPresence()));
     } else if (featureField.getGroupPresence() != null) {
-      featureSpecBuilder
-          .setGroupPresence(FeaturePresenceWithinGroup.parseFrom(featureField.getGroupPresence()));
+      featureSpecBuilder.setGroupPresence(
+          FeaturePresenceWithinGroup.parseFrom(featureField.getGroupPresence()));
     }
 
     if (featureField.getShape() != null) {
@@ -342,14 +343,14 @@ public class FeatureSet extends AbstractTimestampEntity implements Comparable<Fe
     } else if (featureField.getImageDomain() != null) {
       featureSpecBuilder.setImageDomain(ImageDomain.parseFrom(featureField.getImageDomain()));
     } else if (featureField.getMidDomain() != null) {
-      featureSpecBuilder.setIntDomain(IntDomain.parseFrom(featureField.getIntDomain()));
+      featureSpecBuilder.setMidDomain(MIDDomain.parseFrom(featureField.getMidDomain()));
     } else if (featureField.getUrlDomain() != null) {
       featureSpecBuilder.setUrlDomain(URLDomain.parseFrom(featureField.getUrlDomain()));
     } else if (featureField.getTimeDomain() != null) {
       featureSpecBuilder.setTimeDomain(TimeDomain.parseFrom(featureField.getTimeDomain()));
     } else if (featureField.getTimeOfDayDomain() != null) {
-      featureSpecBuilder
-          .setTimeOfDayDomain(TimeOfDayDomain.parseFrom(featureField.getTimeOfDayDomain()));
+      featureSpecBuilder.setTimeOfDayDomain(
+          TimeOfDayDomain.parseFrom(featureField.getTimeOfDayDomain()));
     }
   }
 

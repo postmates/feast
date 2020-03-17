@@ -63,7 +63,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import org.junit.Before;
@@ -78,23 +81,26 @@ import org.tensorflow.metadata.v0.FeaturePresence;
 import org.tensorflow.metadata.v0.FeaturePresenceWithinGroup;
 import org.tensorflow.metadata.v0.FixedShape;
 import org.tensorflow.metadata.v0.FloatDomain;
+import org.tensorflow.metadata.v0.ImageDomain;
 import org.tensorflow.metadata.v0.IntDomain;
+import org.tensorflow.metadata.v0.MIDDomain;
+import org.tensorflow.metadata.v0.NaturalLanguageDomain;
 import org.tensorflow.metadata.v0.StringDomain;
+import org.tensorflow.metadata.v0.StructDomain;
+import org.tensorflow.metadata.v0.TimeDomain;
+import org.tensorflow.metadata.v0.TimeOfDayDomain;
+import org.tensorflow.metadata.v0.URLDomain;
 import org.tensorflow.metadata.v0.ValueCount;
 
 public class SpecServiceTest {
 
-  @Mock
-  private FeatureSetRepository featureSetRepository;
+  @Mock private FeatureSetRepository featureSetRepository;
 
-  @Mock
-  private StoreRepository storeRepository;
+  @Mock private StoreRepository storeRepository;
 
-  @Mock
-  private ProjectRepository projectRepository;
+  @Mock private ProjectRepository projectRepository;
 
-  @Rule
-  public final ExpectedException expectedException = ExpectedException.none();
+  @Rule public final ExpectedException expectedException = ExpectedException.none();
 
   private SpecService specService;
   private List<FeatureSet> featureSets;
@@ -140,25 +146,25 @@ public class SpecServiceTest {
     when(featureSetRepository.findFeatureSetByNameAndProject_NameAndVersion("f1", "project1", 1))
         .thenReturn(featureSets.get(0));
     when(featureSetRepository.findAllByNameLikeAndProject_NameOrderByNameAscVersionAsc(
-        "f1", "project1"))
+            "f1", "project1"))
         .thenReturn(featureSets.subList(0, 3));
     when(featureSetRepository.findAllByNameLikeAndProject_NameOrderByNameAscVersionAsc(
-        "f3", "project1"))
+            "f3", "project1"))
         .thenReturn(featureSets.subList(4, 5));
     when(featureSetRepository.findFirstFeatureSetByNameLikeAndProject_NameOrderByVersionDesc(
-        "f1", "project1"))
+            "f1", "project1"))
         .thenReturn(featureSet1v3);
     when(featureSetRepository.findAllByNameLikeAndProject_NameOrderByNameAscVersionAsc(
-        "f1", "project1"))
+            "f1", "project1"))
         .thenReturn(featureSets.subList(0, 3));
     when(featureSetRepository.findAllByNameLikeAndProject_NameOrderByNameAscVersionAsc(
-        "asd", "project1"))
+            "asd", "project1"))
         .thenReturn(Lists.newArrayList());
     when(featureSetRepository.findAllByNameLikeAndProject_NameOrderByNameAscVersionAsc(
-        "f%", "project1"))
+            "f%", "project1"))
         .thenReturn(featureSets);
     when(featureSetRepository.findAllByNameLikeAndProject_NameLikeOrderByNameAscVersionAsc(
-        "%", "%"))
+            "%", "%"))
         .thenReturn(featureSets);
 
     when(projectRepository.findAllByArchivedIsFalse())
@@ -403,7 +409,7 @@ public class SpecServiceTest {
   public void applyFeatureSetShouldApplyFeatureSetWithInitVersionIfNotExists()
       throws InvalidProtocolBufferException {
     when(featureSetRepository.findAllByNameLikeAndProject_NameOrderByNameAscVersionAsc(
-        "f2", "project1"))
+            "f2", "project1"))
         .thenReturn(Lists.newArrayList());
 
     FeatureSetProto.FeatureSet incomingFeatureSet =
@@ -485,14 +491,14 @@ public class SpecServiceTest {
     Field f3e1 = new Field("f3e1", Enum.STRING);
     FeatureSetProto.FeatureSet incomingFeatureSet =
         (new FeatureSet(
-            "f3",
-            "project1",
-            5,
-            100L,
-            Arrays.asList(f3e1),
-            Arrays.asList(f3f2, f3f1),
-            defaultSource,
-            FeatureSetStatus.STATUS_READY))
+                "f3",
+                "project1",
+                5,
+                100L,
+                Arrays.asList(f3e1),
+                Arrays.asList(f3f2, f3f1),
+                defaultSource,
+                FeatureSetStatus.STATUS_READY))
             .toProto();
 
     ApplyFeatureSetResponse applyFeatureSetResponse =
@@ -513,78 +519,98 @@ public class SpecServiceTest {
   public void applyFeatureSetShouldAcceptPresenceShapeAndDomainConstraints()
       throws InvalidProtocolBufferException {
     List<EntitySpec> entitySpecs = new ArrayList<>();
-    entitySpecs.add(EntitySpec.newBuilder().setName("entity1")
-        .setValueType(Enum.INT64)
-        .setPresence(FeaturePresence.getDefaultInstance())
-        .setShape(FixedShape.getDefaultInstance())
-        .setDomain("mydomain")
-        .build());
-    entitySpecs.add(EntitySpec.newBuilder().setName("entity2")
-        .setValueType(Enum.INT64)
-        .setGroupPresence(FeaturePresenceWithinGroup.getDefaultInstance())
-        .setValueCount(ValueCount.getDefaultInstance())
-        .setIntDomain(IntDomain.getDefaultInstance())
-        .build());
-    entitySpecs.add(EntitySpec.newBuilder().setName("entity3")
-        .setValueType(Enum.FLOAT)
-        .setPresence(FeaturePresence.getDefaultInstance())
-        .setValueCount(ValueCount.getDefaultInstance())
-        .setFloatDomain(FloatDomain.getDefaultInstance())
-        .build());
-    entitySpecs.add(EntitySpec.newBuilder().setName("entity4")
-        .setValueType(Enum.STRING)
-        .setPresence(FeaturePresence.getDefaultInstance())
-        .setValueCount(ValueCount.getDefaultInstance())
-        .setStringDomain(StringDomain.getDefaultInstance())
-        .build());
-    entitySpecs.add(EntitySpec.newBuilder().setName("entity5")
-        .setValueType(Enum.BOOL)
-        .setPresence(FeaturePresence.getDefaultInstance())
-        .setValueCount(ValueCount.getDefaultInstance())
-        .setBoolDomain(BoolDomain.getDefaultInstance())
-        .build());
+    entitySpecs.add(
+        EntitySpec.newBuilder()
+            .setName("entity1")
+            .setValueType(Enum.INT64)
+            .setPresence(FeaturePresence.getDefaultInstance())
+            .setShape(FixedShape.getDefaultInstance())
+            .setDomain("mydomain")
+            .build());
+    entitySpecs.add(
+        EntitySpec.newBuilder()
+            .setName("entity2")
+            .setValueType(Enum.INT64)
+            .setGroupPresence(FeaturePresenceWithinGroup.getDefaultInstance())
+            .setValueCount(ValueCount.getDefaultInstance())
+            .setIntDomain(IntDomain.getDefaultInstance())
+            .build());
+    entitySpecs.add(
+        EntitySpec.newBuilder()
+            .setName("entity3")
+            .setValueType(Enum.FLOAT)
+            .setPresence(FeaturePresence.getDefaultInstance())
+            .setValueCount(ValueCount.getDefaultInstance())
+            .setFloatDomain(FloatDomain.getDefaultInstance())
+            .build());
+    entitySpecs.add(
+        EntitySpec.newBuilder()
+            .setName("entity4")
+            .setValueType(Enum.STRING)
+            .setPresence(FeaturePresence.getDefaultInstance())
+            .setValueCount(ValueCount.getDefaultInstance())
+            .setStringDomain(StringDomain.getDefaultInstance())
+            .build());
+    entitySpecs.add(
+        EntitySpec.newBuilder()
+            .setName("entity5")
+            .setValueType(Enum.BOOL)
+            .setPresence(FeaturePresence.getDefaultInstance())
+            .setValueCount(ValueCount.getDefaultInstance())
+            .setBoolDomain(BoolDomain.getDefaultInstance())
+            .build());
 
     List<FeatureSpec> featureSpecs = new ArrayList<>();
-    featureSpecs.add(FeatureSpec.newBuilder().setName("feature1")
-        .setValueType(Enum.INT64)
-        .setPresence(FeaturePresence.getDefaultInstance())
-        .setShape(FixedShape.getDefaultInstance())
-        .setDomain("mydomain")
-        .build());
-    featureSpecs.add(FeatureSpec.newBuilder().setName("feature2")
-        .setValueType(Enum.INT64)
-        .setGroupPresence(FeaturePresenceWithinGroup.getDefaultInstance())
-        .setValueCount(ValueCount.getDefaultInstance())
-        .setIntDomain(IntDomain.getDefaultInstance())
-        .build());
-    featureSpecs.add(FeatureSpec.newBuilder().setName("feature3")
-        .setValueType(Enum.FLOAT)
-        .setPresence(FeaturePresence.getDefaultInstance())
-        .setValueCount(ValueCount.getDefaultInstance())
-        .setFloatDomain(FloatDomain.getDefaultInstance())
-        .build());
-    featureSpecs.add(FeatureSpec.newBuilder().setName("feature4")
-        .setValueType(Enum.STRING)
-        .setPresence(FeaturePresence.getDefaultInstance())
-        .setValueCount(ValueCount.getDefaultInstance())
-        .setStringDomain(StringDomain.getDefaultInstance())
-        .build());
-    featureSpecs.add(FeatureSpec.newBuilder().setName("feature5")
-        .setValueType(Enum.BOOL)
-        .setPresence(FeaturePresence.getDefaultInstance())
-        .setValueCount(ValueCount.getDefaultInstance())
-        .setBoolDomain(BoolDomain.getDefaultInstance())
-        .build());
+    featureSpecs.add(
+        FeatureSpec.newBuilder()
+            .setName("feature1")
+            .setValueType(Enum.INT64)
+            .setPresence(FeaturePresence.getDefaultInstance())
+            .setShape(FixedShape.getDefaultInstance())
+            .setDomain("mydomain")
+            .build());
+    featureSpecs.add(
+        FeatureSpec.newBuilder()
+            .setName("feature2")
+            .setValueType(Enum.INT64)
+            .setGroupPresence(FeaturePresenceWithinGroup.getDefaultInstance())
+            .setValueCount(ValueCount.getDefaultInstance())
+            .setIntDomain(IntDomain.getDefaultInstance())
+            .build());
+    featureSpecs.add(
+        FeatureSpec.newBuilder()
+            .setName("feature3")
+            .setValueType(Enum.FLOAT)
+            .setPresence(FeaturePresence.getDefaultInstance())
+            .setValueCount(ValueCount.getDefaultInstance())
+            .setFloatDomain(FloatDomain.getDefaultInstance())
+            .build());
+    featureSpecs.add(
+        FeatureSpec.newBuilder()
+            .setName("feature4")
+            .setValueType(Enum.STRING)
+            .setPresence(FeaturePresence.getDefaultInstance())
+            .setValueCount(ValueCount.getDefaultInstance())
+            .setStringDomain(StringDomain.getDefaultInstance())
+            .build());
+    featureSpecs.add(
+        FeatureSpec.newBuilder()
+            .setName("feature5")
+            .setValueType(Enum.BOOL)
+            .setPresence(FeaturePresence.getDefaultInstance())
+            .setValueCount(ValueCount.getDefaultInstance())
+            .setBoolDomain(BoolDomain.getDefaultInstance())
+            .build());
 
-    FeatureSetSpec featureSetSpec = FeatureSetSpec.newBuilder()
-        .setProject("project1")
-        .setName("featureSetWithConstraints")
-        .addAllEntities(entitySpecs)
-        .addAllFeatures(featureSpecs)
-        .build();
-    FeatureSetProto.FeatureSet featureSet = FeatureSetProto.FeatureSet.newBuilder()
-        .setSpec(featureSetSpec)
-        .build();
+    FeatureSetSpec featureSetSpec =
+        FeatureSetSpec.newBuilder()
+            .setProject("project1")
+            .setName("featureSetWithConstraints")
+            .addAllEntities(entitySpecs)
+            .addAllFeatures(featureSpecs)
+            .build();
+    FeatureSetProto.FeatureSet featureSet =
+        FeatureSetProto.FeatureSet.newBuilder().setSpec(featureSetSpec).build();
 
     ApplyFeatureSetResponse applyFeatureSetResponse = specService.applyFeatureSet(featureSet);
     FeatureSetSpec appliedFeatureSetSpec = applyFeatureSetResponse.getFeatureSet().getSpec();
@@ -596,7 +622,8 @@ public class SpecServiceTest {
 
     // appliedFeatureSpecs needs to be sorted because the list returned by specService may not
     // follow the order in the request
-    List<FeatureSpec> appliedFeatureSpecs = new ArrayList<>(appliedFeatureSetSpec.getFeaturesList());
+    List<FeatureSpec> appliedFeatureSpecs =
+        new ArrayList<>(appliedFeatureSetSpec.getFeaturesList());
     appliedFeatureSpecs.sort(Comparator.comparing(FeatureSpec::getName));
 
     assertEquals(appliedEntitySpecs.size(), entitySpecs.size());
@@ -608,6 +635,74 @@ public class SpecServiceTest {
 
     for (int i = 0; i < appliedFeatureSpecs.size(); i++) {
       assertEquals(featureSpecs.get(i), appliedFeatureSpecs.get(i));
+    }
+  }
+
+  @Test
+  public void applyFeatureSetShouldUpdateFeatureSetWhenConstraintsAreUpdated()
+      throws InvalidProtocolBufferException {
+    FeatureSetProto.FeatureSet existingFeatureSet = featureSets.get(2).toProto();
+    assertThat(
+        "Existing feature set has version 3", existingFeatureSet.getSpec().getVersion() == 3);
+    assertThat(
+        "Existing feature set has at least 1 feature",
+        existingFeatureSet.getSpec().getFeaturesList().size() > 0);
+
+    // Map of constraint field name -> value, e.g. "shape" -> FixedShape object.
+    // If any of these fields are updated, SpecService should update the FeatureSet.
+    Map<String, Object> contraintUpdates = new HashMap<>();
+    contraintUpdates.put("presence", FeaturePresence.newBuilder().setMinFraction(0.5).build());
+    contraintUpdates.put(
+        "group_presence", FeaturePresenceWithinGroup.newBuilder().setRequired(true).build());
+    contraintUpdates.put("shape", FixedShape.getDefaultInstance());
+    contraintUpdates.put("value_count", ValueCount.newBuilder().setMin(2).build());
+    contraintUpdates.put("domain", "new_domain");
+    contraintUpdates.put("int_domain", IntDomain.newBuilder().setMax(100).build());
+    contraintUpdates.put("float_domain", FloatDomain.newBuilder().setMin(-0.5f).build());
+    contraintUpdates.put("string_domain", StringDomain.newBuilder().addValue("string1").build());
+    contraintUpdates.put("bool_domain", BoolDomain.newBuilder().setFalseValue("falsy").build());
+    contraintUpdates.put("struct_domain", StructDomain.getDefaultInstance());
+    contraintUpdates.put("natural_language_domain", NaturalLanguageDomain.getDefaultInstance());
+    contraintUpdates.put("image_domain", ImageDomain.getDefaultInstance());
+    contraintUpdates.put("mid_domain", MIDDomain.getDefaultInstance());
+    contraintUpdates.put("url_domain", URLDomain.getDefaultInstance());
+    contraintUpdates.put(
+        "time_domain", TimeDomain.newBuilder().setStringFormat("string_format").build());
+    contraintUpdates.put("time_of_day_domain", TimeOfDayDomain.getDefaultInstance());
+
+    for (Entry<String, Object> constraint : contraintUpdates.entrySet()) {
+      String name = constraint.getKey();
+      Object value = constraint.getValue();
+      FeatureSpec newFeatureSpec =
+          existingFeatureSet
+              .getSpec()
+              .getFeatures(0)
+              .toBuilder()
+              .setField(FeatureSpec.getDescriptor().findFieldByName(name), value)
+              .build();
+      FeatureSetSpec newFeatureSetSpec =
+          existingFeatureSet.getSpec().toBuilder().setFeatures(0, newFeatureSpec).build();
+      FeatureSetProto.FeatureSet newFeatureSet =
+          existingFeatureSet.toBuilder().setSpec(newFeatureSetSpec).build();
+
+      ApplyFeatureSetResponse response = specService.applyFeatureSet(newFeatureSet);
+
+      assertEquals(
+          "Response should have CREATED status when field '" + name + "' is updated",
+          Status.CREATED,
+          response.getStatus());
+      assertEquals(
+          "FeatureSet should have new version when field '" + name + "' is updated",
+          existingFeatureSet.getSpec().getVersion() + 1,
+          response.getFeatureSet().getSpec().getVersion());
+      assertEquals(
+          "Feature should have field '" + name + "' set correctly",
+          constraint.getValue(),
+          response
+              .getFeatureSet()
+              .getSpec()
+              .getFeatures(0)
+              .getField(FeatureSpec.getDescriptor().findFieldByName(name)));
     }
   }
 
@@ -684,6 +779,4 @@ public class SpecServiceTest {
     store.setConfig(RedisConfig.newBuilder().setPort(6379).build().toByteArray());
     return store;
   }
-
-
 }

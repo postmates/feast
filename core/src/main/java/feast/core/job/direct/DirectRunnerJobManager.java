@@ -17,21 +17,22 @@
 package feast.core.job.direct;
 
 import com.google.common.base.Strings;
-import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.util.JsonFormat;
-import com.google.protobuf.util.JsonFormat.Printer;
 import feast.core.FeatureSetProto;
 import feast.core.StoreProto;
 import feast.core.config.FeastProperties.MetricsProperties;
 import feast.core.exception.JobExecutionException;
 import feast.core.job.JobManager;
 import feast.core.job.Runner;
+import feast.core.job.option.FeatureSetJsonByteConverter;
 import feast.core.model.FeatureSet;
 import feast.core.model.Job;
 import feast.core.model.JobStatus;
 import feast.core.util.TypeConversion;
 import feast.ingestion.ImportJob;
+import feast.ingestion.options.BZip2Compressor;
 import feast.ingestion.options.ImportOptions;
+import feast.ingestion.options.OptionCompressor;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -92,20 +93,20 @@ public class DirectRunnerJobManager implements JobManager {
   }
 
   private ImportOptions getPipelineOptions(
-      List<FeatureSetProto.FeatureSet> featureSets, StoreProto.Store sink)
-      throws InvalidProtocolBufferException {
+      List<FeatureSetProto.FeatureSet> featureSets, StoreProto.Store sink) throws IOException {
     String[] args = TypeConversion.convertMapToArgs(defaultOptions);
     ImportOptions pipelineOptions = PipelineOptionsFactory.fromArgs(args).as(ImportOptions.class);
-    Printer printer = JsonFormat.printer();
-    List<String> featureSetsJson = new ArrayList<>();
-    for (FeatureSetProto.FeatureSet featureSet : featureSets) {
-      featureSetsJson.add(printer.print(featureSet.getSpec()));
-    }
-    pipelineOptions.setFeatureSetJson(featureSetsJson);
-    pipelineOptions.setStoreJson(Collections.singletonList(printer.print(sink)));
+
+    OptionCompressor<List<FeatureSetProto.FeatureSet>> featureSetJsonCompressor =
+        new BZip2Compressor<>(new FeatureSetJsonByteConverter());
+
+    pipelineOptions.setFeatureSetJson(featureSetJsonCompressor.compress(featureSets));
+    pipelineOptions.setStoreJson(Collections.singletonList(JsonFormat.printer().print(sink)));
     pipelineOptions.setRunner(DirectRunner.class);
     pipelineOptions.setProject(""); // set to default value to satisfy validation
+    log.info("FINDING METRICS!\n{}", metrics);
     if (metrics.isEnabled()) {
+      log.info("METRICS ENABLED!");
       pipelineOptions.setMetricsExporterType(metrics.getType());
       if (metrics.getType().equals("statsd")) {
         pipelineOptions.setStatsdHost(metrics.getHost());
@@ -148,8 +149,7 @@ public class DirectRunnerJobManager implements JobManager {
     try {
       job.abort();
     } catch (IOException e) {
-      throw new RuntimeException(
-          Strings.lenientFormat("Unable to abort DirectRunner job %s", extId), e);
+      throw new RuntimeException(String.format("Unable to abort DirectRunner job %s", extId), e);
     }
     jobs.remove(extId);
   }

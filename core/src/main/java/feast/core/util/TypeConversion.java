@@ -16,7 +16,6 @@
  */
 package feast.core.util;
 
-import com.google.common.base.Strings;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import java.lang.reflect.Type;
@@ -85,7 +84,7 @@ public class TypeConversion {
   public static String[] convertMapToArgs(Map<String, String> map) {
     List<String> args = new ArrayList<>();
     for (Entry<String, String> arg : map.entrySet()) {
-      args.add(Strings.lenientFormat("--%s=%s", arg.getKey(), arg.getValue()));
+      args.add(String.format("--%s=%s", arg.getKey(), arg.getValue()));
     }
     return args.toArray(new String[] {});
   }

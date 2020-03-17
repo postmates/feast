@@ -49,7 +49,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.commons.lang3.tuple.Triple;
 import org.slf4j.Logger;
 
 /** In-memory cache of specs. */
@@ -91,6 +90,7 @@ public class CachedSpecService {
     featureSetCacheLoader = CacheLoader.from(featureSets::get);
     featureSetCache =
         CacheBuilder.newBuilder().maximumSize(MAX_SPEC_COUNT).build(featureSetCacheLoader);
+    featureSetCache.putAll(featureSets);
   }
 
   /**
@@ -102,9 +102,14 @@ public class CachedSpecService {
     return this.store;
   }
 
+  public FeatureSetSpec getFeatureSetSpec(String featureSetRef) throws ExecutionException {
+    return featureSetCache.get(featureSetRef);
+  }
+
   /**
    * Get FeatureSetSpecs for the given features.
    *
+   * @param featureReferences A reference to the corresponding feature set
    * @return FeatureSetRequest containing the specs, and their respective feature references
    */
   public List<FeatureSetRequest> getFeatureSets(List<FeatureReference> featureReferences) {
@@ -119,6 +124,7 @@ public class CachedSpecService {
                 throw new SpecRetrievalException(
                     String.format("Unable to retrieve feature %s", featureReference));
               }
+              //log.info("FeatRef: {} with fs {}", featureReference, featureSet);
               return Pair.of(featureSet, featureReference);
             })
         .collect(groupingBy(Pair::getLeft))
@@ -128,11 +134,13 @@ public class CachedSpecService {
                 FeatureSetSpec featureSetSpec = featureSetCache.get(fsName);
                 List<FeatureReference> requestedFeatures =
                     featureRefs.stream().map(Pair::getRight).collect(Collectors.toList());
+                //log.info("RequestBuilding for {}", featureSetSpec.toString());
                 FeatureSetRequest featureSetRequest =
                     FeatureSetRequest.newBuilder()
                         .setSpec(featureSetSpec)
                         .addAllFeatureReferences(requestedFeatures)
                         .build();
+                //log.info("FS Request {}", featureSetRequest);
                 featureSetRequests.add(featureSetRequest);
               } catch (ExecutionException e) {
                 throw new SpecRetrievalException(
@@ -194,13 +202,8 @@ public class CachedSpecService {
   private Map<String, String> getFeatureToFeatureSetMapping(
       Map<String, FeatureSetSpec> featureSets) {
     HashMap<String, String> mapping = new HashMap<>();
-
     featureSets.values().stream()
-        .collect(
-            groupingBy(
-                featureSet ->
-                    Triple.of(
-                        featureSet.getProject(), featureSet.getName(), featureSet.getVersion())))
+        .collect(groupingBy(featureSet -> Pair.of(featureSet.getProject(), featureSet.getName())))
         .forEach(
             (group, groupedFeatureSets) -> {
               groupedFeatureSets =
@@ -239,7 +242,6 @@ public class CachedSpecService {
     try {
       List<String> fileContents = Files.readAllLines(path);
       String yaml = fileContents.stream().reduce("", (l1, l2) -> l1 + "\n" + l2);
-      log.info("loaded store config at {}: \n{}", path.toString(), yaml);
       return yamlToStoreProto(yaml);
     } catch (IOException e) {
       throw new RuntimeException(
