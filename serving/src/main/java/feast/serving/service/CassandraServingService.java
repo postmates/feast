@@ -52,6 +52,7 @@ import io.opentracing.Tracer;
 import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -176,27 +177,41 @@ public class CassandraServingService implements ServingService {
       Map<EntityRow, Map<String, Value>> featureValuesMap,
       FeatureSetRequest featureSetRequest) {
     FeatureSetSpec spec = featureSetRequest.getSpec();
-    log.debug("Sending multi get: {}", keys);
-    List<ResultSet> results = sendMultiGet(keys);
+    HashMap<String, ResultSet> results = sendMultiGet(keys, false);
     long startTime = System.currentTimeMillis();
+    ArrayList<Integer> failed = new ArrayList<>();
+    ArrayList<Integer> passed = new ArrayList<>();
     try (Scope scope = tracer.buildSpan("Cassandra-processResponse").startActive(true)) {
-      log.debug("Found {} results", results.size());
-      int foundResults = 0;
       while (true) {
-        if (foundResults == results.size()) {
+        if (passed.size() == results.size()) {
           break;
         }
-        for (int i = 0; i < results.size(); i++) {
+        for (int i = 0; i < keys.size(); i++) {
           EntityRow entityRow = entityRows.get(i);
           Map<String, Value> featureValues = featureValuesMap.get(entityRow);
-          ResultSet queryRows = results.get(i);
+          ResultSet queryRows = results.get(keys.get(i));
           Instant instant = Instant.now();
           List<Field> fields = new ArrayList<>();
-          if (!queryRows.isFullyFetched()) {
+          if (!queryRows.isFullyFetched() || passed.contains(i)) {
             continue;
           }
           List<ExecutionInfo> ee = queryRows.getExecutionInfos();
-          foundResults += 1;
+          if (queryRows.getAvailableWithoutFetching() == 0) {
+            if (!failed.contains(i)) {
+              failed.add(i);
+              List<String> atomicList = new ArrayList<>();
+              atomicList.add(keys.get(i));
+              HashMap<String, ResultSet> atomic_retry = sendMultiGet(atomicList, true);
+              results.replace(keys.get(i), atomic_retry.get(keys.get(i)));
+              continue;
+            } else {
+              log.warn(
+                  "Failed to find a nonempty result for the key {}. Query trace {}",
+                  keys.get(i),
+                  queryRows.getExecutionInfo().getQueryTrace());
+            }
+          }
+          passed.add(i);
           while (queryRows.getAvailableWithoutFetching() > 0) {
             Row row = queryRows.one();
             ee = queryRows.getExecutionInfos();
@@ -207,7 +222,6 @@ public class CassandraServingService implements ServingService {
                     TimeUnit.MICROSECONDS.toSeconds(microSeconds),
                     TimeUnit.MICROSECONDS.toNanos(
                         Math.floorMod(microSeconds, TimeUnit.SECONDS.toMicros(1))));
-            log.debug(String.format("Found the query row: %s", row.toString()));
             try {
               fields.add(
                   Field.newBuilder()
@@ -315,15 +329,16 @@ public class CassandraServingService implements ServingService {
    * @param keys list of cassandra keys
    * @return list of {@link FeatureRow} in cassandra representation for each cassandra keys
    */
-  private List<ResultSet> sendMultiGet(List<String> keys) {
+  private HashMap<String, ResultSet> sendMultiGet(List<String> keys, Boolean tracing) {
     try (Scope scope = tracer.buildSpan("Cassandra-sendMultiGet").startActive(true)) {
-      List<ResultSet> results = new ArrayList<>();
+      HashMap<String, ResultSet> results = new HashMap<>();
       long startTime = System.currentTimeMillis();
       try {
         for (String key : keys) {
-          results.add(
+          results.put(
+              key,
               session.execute(
-                  query.bind(key).setTracing(false).setConsistencyLevel(ConsistencyLevel.TWO)));
+                  query.bind(key).setTracing(tracing).setConsistencyLevel(ConsistencyLevel.TWO)));
         }
         return results;
       } catch (Exception e) {

@@ -163,7 +163,7 @@ logType: JSON
 logLevel: warn
 
 livenessProbe:
-  enabled: false
+  enabled: true
   initialDelaySeconds: 60
   periodSeconds: 10
   timeoutSeconds: 5
@@ -171,7 +171,7 @@ livenessProbe:
   failureThreshold: 5
 
 readinessProbe:
-  enabled: false
+  enabled: true
   initialDelaySeconds: 15
   periodSeconds: 10
   timeoutSeconds: 10
