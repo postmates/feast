@@ -36,12 +36,12 @@ build-java:
 	mvn clean verify
 
 build-docker:
-	#docker build -t $(REGISTRY)/feast-core:$(VERSION) -f infra/docker/core/Dockerfile .
+	docker build -t $(REGISTRY)/feast-core:$(VERSION) -f infra/docker/core/Dockerfile .
 	docker build -t $(REGISTRY)/feast-serving:$(VERSION) -f infra/docker/serving/Dockerfile .
 
 build-push-docker:
 	@$(MAKE) build-docker registry=$(REGISTRY) version=$(VERSION)
-	#docker push $(REGISTRY)/feast-core:$(VERSION)
+	docker push $(REGISTRY)/feast-core:$(VERSION)
 	docker push $(REGISTRY)/feast-serving:$(VERSION)
 
 clean-html:
