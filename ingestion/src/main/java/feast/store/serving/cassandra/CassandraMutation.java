@@ -98,7 +98,11 @@ public final class CassandraMutation implements Serializable {
     return featureRow.getFeatureSet()
         + ":"
         + entityNames.stream()
-            .map(f -> entities.get(f).getName() + "=" + ValueUtil.toString(entities.get(f).getValue()))
+            .map(
+                f ->
+                    entities.get(f).getName()
+                        + "="
+                        + ValueUtil.toString(entities.get(f).getValue()))
             .collect(Collectors.joining("|"));
   }
 
