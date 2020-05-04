@@ -66,6 +66,7 @@ public class CassandraServingService implements ServingService {
   private final CqlSession session;
   private final String keyspace;
   private final String tableName;
+  private final Boolean versionless;
   private final Tracer tracer;
   private final PreparedStatement query;
   private final CachedSpecService specService;
@@ -74,6 +75,7 @@ public class CassandraServingService implements ServingService {
       CqlSession session,
       String keyspace,
       String tableName,
+      Boolean versionless,
       CachedSpecService specService,
       Tracer tracer) {
     this.session = session;
@@ -87,6 +89,7 @@ public class CassandraServingService implements ServingService {
                 keyspace, tableName));
     this.query = query;
     this.specService = specService;
+    this.versionless = versionless;
   }
 
   /** {@inheritDoc} */
@@ -120,7 +123,7 @@ public class CassandraServingService implements ServingService {
                 .collect(Collectors.toList());
 
         List<String> cassandraKeys =
-            createLookupKeys(featureSetEntityNames, entityRows, featureSetRequest);
+            createLookupKeys(featureSetEntityNames, entityRows, featureSetRequest, versionless);
         try {
           getAndProcessAll(cassandraKeys, entityRows, featureValuesMap, featureSetRequest);
         } catch (Exception e) {
@@ -155,11 +158,17 @@ public class CassandraServingService implements ServingService {
   List<String> createLookupKeys(
       List<String> featureSetEntityNames,
       List<EntityRow> entityRows,
-      FeatureSetRequest featureSetRequest) {
+      FeatureSetRequest featureSetRequest,
+      Boolean versionless) {
     try (Scope scope = tracer.buildSpan("Cassandra-makeCassandraKeys").startActive(true)) {
       FeatureSetSpec fsSpec = featureSetRequest.getSpec();
-      String featureSetId =
-          String.format("%s/%s:%s", fsSpec.getProject(), fsSpec.getName(), fsSpec.getVersion());
+      String featureSetId;
+      if (versionless) {
+        featureSetId = String.format("%s/%s", fsSpec.getProject(), fsSpec.getName());
+      } else {
+        featureSetId =
+            String.format("%s/%s:%s", fsSpec.getProject(), fsSpec.getName(), fsSpec.getVersion());
+      }
       return entityRows.stream()
           .map(row -> createCassandraKey(featureSetId, featureSetEntityNames, row))
           .collect(Collectors.toList());

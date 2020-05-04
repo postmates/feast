@@ -167,7 +167,9 @@ public abstract class WriteToStore extends PTransform<PCollection<FeatureRow>, P
                 "Create CassandraMutation from FeatureRow",
                 ParDo.of(
                     new FeatureRowToCassandraMutationDoFn(
-                        getFeatureSets(), cassandraConfig.getDefaultTtl())))
+                        getFeatureSets(),
+                        cassandraConfig.getDefaultTtl(),
+                        cassandraConfig.getVersionless())))
             .apply(
                 CassandraIO.<CassandraMutation>write()
                     .withHosts(Arrays.asList(cassandraConfig.getBootstrapHosts().split(",")))

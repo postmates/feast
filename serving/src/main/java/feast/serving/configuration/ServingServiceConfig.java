@@ -181,6 +181,7 @@ public class ServingServiceConfig {
                 cluster,
                 cassandraConfig.getKeyspace(),
                 cassandraConfig.getTableName(),
+                cassandraConfig.getVersionless(),
                 specService,
                 tracer);
         break;
