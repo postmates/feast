@@ -155,6 +155,8 @@ message Store {
     // Specify 0 for no default expiration
     google.protobuf.Duration default_ttl = 6;
     bool versionless = 7;
+    string consistency = 8;
+    bool tracing = 9;
   }
 
   message Subscription {

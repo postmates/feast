@@ -142,6 +142,7 @@ class Store(google___protobuf___message___Message):
         keyspace = ... # type: typing___Text
         table_name = ... # type: typing___Text
         versionless = ... # type: builtin___bool
+        consistency = ... # type: typing___Text
 
         @property
         def replication_options(self) -> typing___MutableMapping[typing___Text, typing___Text]: ...
@@ -158,6 +159,7 @@ class Store(google___protobuf___message___Message):
             replication_options : typing___Optional[typing___Mapping[typing___Text, typing___Text]] = None,
             default_ttl : typing___Optional[google___protobuf___duration_pb2___Duration] = None,
             versionless : typing___Optional[builtin___bool] = None,
+            consistency : typing___Optional[typing___Text] = None,
             ) -> None: ...
         if sys.version_info >= (3,):
             @classmethod
@@ -168,7 +170,7 @@ class Store(google___protobuf___message___Message):
         def MergeFrom(self, other_msg: google___protobuf___message___Message) -> None: ...
         def CopyFrom(self, other_msg: google___protobuf___message___Message) -> None: ...
         def HasField(self, field_name: typing_extensions___Literal[u"default_ttl",b"default_ttl"]) -> builtin___bool: ...
-        def ClearField(self, field_name: typing_extensions___Literal[u"bootstrap_hosts",b"bootstrap_hosts",u"default_ttl",b"default_ttl",u"keyspace",b"keyspace",u"port",b"port",u"replication_options",b"replication_options",u"table_name",b"table_name",u"versionless",b"versionless"]) -> None: ...
+        def ClearField(self, field_name: typing_extensions___Literal[u"bootstrap_hosts",b"bootstrap_hosts",u"consistency",b"consistency",u"default_ttl",b"default_ttl",u"keyspace",b"keyspace",u"port",b"port",u"replication_options",b"replication_options",u"table_name",b"table_name",u"versionless",b"versionless"]) -> None: ...
     global___CassandraConfig = CassandraConfig
 
     class Subscription(google___protobuf___message___Message):

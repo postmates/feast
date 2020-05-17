@@ -49,11 +49,7 @@ public class FeatureRowToCassandraMutationDoFn extends DoFn<FeatureRow, Cassandr
     for (FeatureSet set : featureSets.values()) {
       FeatureSetSpec spec = set.getSpec();
       String featureSetName;
-      if (versionless) {
-        featureSetName = spec.getProject() + "/" + spec.getName();
-      } else {
-        featureSetName = spec.getProject() + "/" + spec.getName() + ":" + spec.getVersion();
-      }
+      featureSetName = spec.getProject() + "/" + spec.getName() + ":" + spec.getVersion();
       if (spec.getMaxAge() != null && spec.getMaxAge().getSeconds() > 0) {
         maxAges.put(featureSetName, Math.toIntExact(spec.getMaxAge().getSeconds()));
       } else {
