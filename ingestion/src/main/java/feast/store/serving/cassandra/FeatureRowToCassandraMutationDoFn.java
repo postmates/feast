@@ -73,11 +73,15 @@ public class FeatureRowToCassandraMutationDoFn extends DoFn<FeatureRow, Cassandr
       Collection<CassandraMutation> mutations = new ArrayList<>();
       for (Field field : featureRow.getFieldsList()) {
         if (featureNames.contains(field.getName())) {
+          ByteBuffer value = ByteBuffer.wrap(field.getValue().toByteArray());
+          if (!value.hasRemaining()) {
+            continue;
+          }
           mutations.add(
               new CassandraMutation(
                   key,
                   field.getName(),
-                  ByteBuffer.wrap(field.getValue().toByteArray()),
+                  value,
                   Timestamps.toMicros(featureRow.getEventTimestamp()),
                   maxAges.get(featureRow.getFeatureSet())));
         }
