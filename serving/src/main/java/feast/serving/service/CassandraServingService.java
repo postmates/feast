@@ -108,7 +108,6 @@ public class CassandraServingService implements ServingService {
   @Override
   public GetOnlineFeaturesResponse getOnlineFeatures(GetOnlineFeaturesRequest request) {
     try (Scope scope = tracer.buildSpan("Cassandra-getOnlineFeatures").startActive(true)) {
-      long startTime = System.currentTimeMillis();
       GetOnlineFeaturesResponse.Builder getOnlineFeaturesResponseBuilder =
           GetOnlineFeaturesResponse.newBuilder();
 
@@ -141,9 +140,6 @@ public class CassandraServingService implements ServingService {
           featureValuesMap.values().stream()
               .map(valueMap -> FieldValues.newBuilder().putAllFields(valueMap).build())
               .collect(Collectors.toList());
-      requestLatency
-          .labels("getOnlineFeatures")
-          .observe((System.currentTimeMillis() - startTime) / 1000);
       return getOnlineFeaturesResponseBuilder.addAllFieldValues(fieldValues).build();
     }
   }
@@ -218,36 +214,6 @@ public class CassandraServingService implements ServingService {
             log.warn(
                 String.format("Coordinator: %s", queryRows.getExecutionInfo().getCoordinator()));
           }
-          while (queryRows.getAvailableWithoutFetching() > 0) {
-            Row row = queryRows.one();
-            ee = queryRows.getExecutionInfos();
-
-            long microSeconds = row.getLong("writetime");
-            instant =
-                Instant.ofEpochSecond(
-                    TimeUnit.MICROSECONDS.toSeconds(microSeconds),
-                    TimeUnit.MICROSECONDS.toNanos(
-                        Math.floorMod(microSeconds, TimeUnit.SECONDS.toMicros(1))));
-            try {
-              fields.add(
-                  Field.newBuilder()
-                      .setName(row.getString("feature"))
-                      .setValue(
-                          Value.parseFrom(ByteBuffer.wrap(row.getBytesUnsafe("value").array())))
-                      .build());
-            } catch (InvalidProtocolBufferException e) {
-              e.printStackTrace();
-            }
-          }
-          FeatureRow featureRow =
-              FeatureRow.newBuilder()
-                  .addAllFields(fields)
-                  .setEventTimestamp(
-                      Timestamp.newBuilder()
-                          .setSeconds(instant.getEpochSecond())
-                          .setNanos(instant.getNano())
-                          .build())
-                  .build();
           featureSetRequest
               .getFeatureReferences()
               .parallelStream()
@@ -263,8 +229,40 @@ public class CassandraServingService implements ServingService {
                   .collect(
                       Collectors.toMap(
                           FeatureReference::getName, featureReference -> featureReference));
-          featureRow.getFieldsList().stream()
-              .filter(field -> featureNames.keySet().contains(field.getName()))
+          while (queryRows.getAvailableWithoutFetching() > 0) {
+            Row row = queryRows.one();
+            ee = queryRows.getExecutionInfos();
+
+            long microSeconds = row.getLong("writetime");
+            instant =
+                Instant.ofEpochSecond(
+                    TimeUnit.MICROSECONDS.toSeconds(microSeconds),
+                    TimeUnit.MICROSECONDS.toNanos(
+                        Math.floorMod(microSeconds, TimeUnit.SECONDS.toMicros(1))));
+            try {
+              if (featureNames.keySet().contains(row.getString("feature"))) {
+                fields.add(
+                    Field.newBuilder()
+                        .setName(row.getString("feature"))
+                        .setValue(
+                            Value.parseFrom(ByteBuffer.wrap(row.getBytesUnsafe("value").array())))
+                        .build());
+              }
+            } catch (InvalidProtocolBufferException e) {
+              e.printStackTrace();
+            }
+          }
+          FeatureRow featureRow =
+              FeatureRow.newBuilder()
+                  .addAllFields(fields)
+                  .setEventTimestamp(
+                      Timestamp.newBuilder()
+                          .setSeconds(instant.getEpochSecond())
+                          .setNanos(instant.getNano())
+                          .build())
+                  .build();
+          featureRow
+              .getFieldsList()
               .forEach(
                   field -> {
                     FeatureReference ref = featureNames.get(field.getName());
