@@ -40,6 +40,7 @@ import feast.serving.ServingAPIProto.GetOnlineFeaturesRequest;
 import feast.serving.ServingAPIProto.GetOnlineFeaturesRequest.EntityRow;
 import feast.serving.ServingAPIProto.GetOnlineFeaturesResponse;
 import feast.serving.ServingAPIProto.GetOnlineFeaturesResponse.FieldValues;
+import feast.serving.exception.SpecRetrievalException;
 import feast.serving.specs.CachedSpecService;
 import feast.serving.specs.FeatureSetRequest;
 import feast.serving.util.ValueUtil;
@@ -325,7 +326,11 @@ public class CassandraServingService implements ServingService {
     List<String> res = new ArrayList<>();
     Collections.sort(featureSetEntityNames);
     for (String entityName : featureSetEntityNames) {
-      res.add(entityName + "=" + ValueUtil.toString(fieldsMap.get(entityName)));
+      Value val = fieldsMap.get(entityName);
+      if(val.getValCase().equals(Value.ValCase.VAL_NOT_SET)) {
+        throw new SpecRetrievalException(String.format("Value of Entity %s not set in FeatureSet %s", entityName, featureSet));
+      }
+      res.add(entityName + "=" + ValueUtil.toString(val));
     }
     return featureSet + ":" + String.join("|", res);
   }
