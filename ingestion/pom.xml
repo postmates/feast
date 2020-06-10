@@ -16,18 +16,18 @@
   ~
   -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
-  <modelVersion>4.0.0</modelVersion>
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
 
-  <parent>
-    <groupId>dev.feast</groupId>
-    <artifactId>feast-parent</artifactId>
-    <version>${revision}</version>
-  </parent>
+    <parent>
+        <groupId>dev.feast</groupId>
+        <artifactId>feast-parent</artifactId>
+        <version>${revision}</version>
+    </parent>
 
-  <name>Feast Ingestion</name>
-  <artifactId>feast-ingestion</artifactId>
+    <name>Feast Ingestion</name>
+    <artifactId>feast-ingestion</artifactId>
 
   <build>
     <plugins>
@@ -81,75 +81,76 @@
         </executions>
       </plugin>
 
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-enforcer-plugin</artifactId>
-        <executions>
-          <!--
-            We want to keep Ingestion compatible with Java 8 runtime for Beam runners, #518.
-            Unfortunately this doesn't seem to work on Reactor modules, though:
-            https://github.com/mojohaus/mojo-parent/issues/85
-            -->
-          <execution>
-            <id>enforce-bytecode-version</id>
-            <goals>
-              <goal>enforce</goal>
-            </goals>
-            <configuration>
-              <rules>
-                <enforceBytecodeVersion>
-                  <maxJdkVersion>1.8</maxJdkVersion>
-                </enforceBytecodeVersion>
-              </rules>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <!--
+                      We want to keep Ingestion compatible with Java 8 runtime for Beam runners, #518.
+                      Unfortunately this doesn't seem to work on Reactor modules, though:
+                      https://github.com/mojohaus/mojo-parent/issues/85
+                      -->
+                    <execution>
+                        <id>enforce-bytecode-version</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <enforceBytecodeVersion>
+                                    <maxJdkVersion>1.8</maxJdkVersion>
+                                </enforceBytecodeVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
 
-      <plugin>
-        <groupId>org.jacoco</groupId>
-        <artifactId>jacoco-maven-plugin</artifactId>
-      </plugin>
-    </plugins>
-  </build>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
 
-  <dependencies>
-    <dependency>
-      <groupId>dev.feast</groupId>
-      <artifactId>datatypes-java</artifactId>
-      <version>${project.version}</version>
-    </dependency>
+    <dependencies>
+        <dependency>
+            <groupId>dev.feast</groupId>
+            <artifactId>datatypes-java</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
-    <dependency>
-      <groupId>dev.feast</groupId>
-      <artifactId>feast-storage-api</artifactId>
-      <version>${project.version}</version>
-    </dependency>
+        <dependency>
+            <groupId>dev.feast</groupId>
+            <artifactId>feast-storage-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
-    <dependency>
-      <groupId>dev.feast</groupId>
-      <artifactId>feast-storage-connector-redis</artifactId>
-      <version>${project.version}</version>
-    </dependency>
+        <dependency>
+            <groupId>dev.feast</groupId>
+            <artifactId>feast-storage-connector-redis</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
-    <dependency>
-      <groupId>dev.feast</groupId>
-      <artifactId>feast-storage-connector-bigquery</artifactId>
-      <version>${project.version}</version>
-    </dependency>
+        <dependency>
+            <groupId>dev.feast</groupId>
+            <artifactId>feast-storage-connector-bigquery</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
-    <dependency>
-      <groupId>dev.feast</groupId>
-      <artifactId>feast-storage-connector-bigtable</artifactId>
-      <version>${project.version}</version>
-    </dependency>
+        <dependency>
+            <groupId>dev.feast</groupId>
+            <artifactId>feast-storage-connector-bigtable</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
-    <dependency>
-      <groupId>dev.feast</groupId>
-      <artifactId>feast-common</artifactId>
-      <version>${project.version}</version>
-    </dependency>
+        <dependency>
+            <groupId>dev.feast</groupId>
+            <artifactId>feast-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
+<<<<<<< HEAD
     <dependency>
       <groupId>dev.feast</groupId>
       <artifactId>feast-common-test</artifactId>
@@ -163,10 +164,10 @@
       <version>1.6.6</version>
     </dependency>
 
-    <dependency>
-      <groupId>com.google.cloud</groupId>
-      <artifactId>google-cloud-bigquery</artifactId>
-    </dependency>
+        <dependency>
+            <groupId>com.google.cloud</groupId>
+            <artifactId>google-cloud-bigquery</artifactId>
+        </dependency>
 
     <dependency>
       <groupId>com.google.protobuf</groupId>
@@ -182,38 +183,38 @@
       <artifactId>kafka-clients</artifactId>
     </dependency>
 
-    <dependency>
-      <groupId>joda-time</groupId>
-      <artifactId>joda-time</artifactId>
-    </dependency>
+        <dependency>
+            <groupId>joda-time</groupId>
+            <artifactId>joda-time</artifactId>
+        </dependency>
 
-    <dependency>
-      <groupId>org.apache.beam</groupId>
-      <artifactId>beam-runners-google-cloud-dataflow-java</artifactId>
-      <version>${org.apache.beam.version}</version>
-    </dependency>
+        <dependency>
+            <groupId>org.apache.beam</groupId>
+            <artifactId>beam-runners-google-cloud-dataflow-java</artifactId>
+            <version>${org.apache.beam.version}</version>
+        </dependency>
 
-    <dependency>
-      <groupId>org.apache.beam</groupId>
-      <artifactId>beam-runners-direct-java</artifactId>
-      <version>${org.apache.beam.version}</version>
-    </dependency>
+        <dependency>
+            <groupId>org.apache.beam</groupId>
+            <artifactId>beam-runners-direct-java</artifactId>
+            <version>${org.apache.beam.version}</version>
+        </dependency>
 
-    <dependency>
-      <groupId>org.apache.beam</groupId>
-      <artifactId>beam-sdks-java-io-kafka</artifactId>
-      <version>${org.apache.beam.version}</version>
-    </dependency>
+        <dependency>
+            <groupId>org.apache.beam</groupId>
+            <artifactId>beam-sdks-java-io-kafka</artifactId>
+            <version>${org.apache.beam.version}</version>
+        </dependency>
 
-    <dependency>
-      <groupId>io.lettuce</groupId>
-      <artifactId>lettuce-core</artifactId>
-    </dependency>
+        <dependency>
+            <groupId>io.lettuce</groupId>
+            <artifactId>lettuce-core</artifactId>
+        </dependency>
 
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-api</artifactId>
-    </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
 
     <dependency>
       <groupId>org.slf4j</groupId>
@@ -222,22 +223,22 @@
       <scope>test</scope>
     </dependency>
 
-    <dependency>
-      <groupId>com.google.guava</groupId>
-      <artifactId>guava</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.datadoghq</groupId>
-      <artifactId>java-dogstatsd-client</artifactId>
-      <version>2.8.1</version>
-    </dependency>
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.datadoghq</groupId>
+            <artifactId>java-dogstatsd-client</artifactId>
+            <version>2.8.1</version>
+        </dependency>
 
-    <!-- For calculation of percentiles in feature values -->
-    <dependency>
-      <groupId>org.apache.commons</groupId>
-      <artifactId>commons-math3</artifactId>
-      <version>3.6.1</version>
-    </dependency>
+        <!-- For calculation of percentiles in feature values -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-math3</artifactId>
+            <version>3.6.1</version>
+        </dependency>
 
-  </dependencies>
+    </dependencies>
 </project>
