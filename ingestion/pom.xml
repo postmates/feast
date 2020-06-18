@@ -128,13 +128,13 @@
 
     <dependency>
       <groupId>dev.feast</groupId>
-      <artifactId>feast-storage-connector-redis-cluster</artifactId>
+      <artifactId>feast-storage-connector-bigquery</artifactId>
       <version>${project.version}</version>
     </dependency>
 
     <dependency>
       <groupId>dev.feast</groupId>
-      <artifactId>feast-storage-connector-bigquery</artifactId>
+      <artifactId>feast-storage-connector-bigtable</artifactId>
       <version>${project.version}</version>
     </dependency>
 
@@ -193,6 +193,7 @@
     <dependency>
       <groupId>joda-time</groupId>
       <artifactId>joda-time</artifactId>
+      <version>2.10.6</version>
     </dependency>
 
     <dependency>

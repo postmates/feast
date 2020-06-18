@@ -28,8 +28,9 @@ import feast.serving.specs.CachedSpecService;
 import feast.storage.api.retriever.HistoricalRetriever;
 import feast.storage.api.retriever.OnlineRetriever;
 import feast.storage.connectors.bigquery.retriever.BigQueryHistoricalRetriever;
+import feast.storage.connectors.bigtable.retriever.BigtableOnlineRetriever;
+import feast.storage.connectors.redis.retriever.RedisClusterOnlineRetriever;
 import feast.storage.connectors.redis.retriever.RedisOnlineRetriever;
-import feast.storage.connectors.rediscluster.retriever.RedisClusterOnlineRetriever;
 import io.opentracing.Tracer;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -69,6 +70,10 @@ public class ServingServiceConfig {
         }
         HistoricalRetriever bqRetriever = BigQueryHistoricalRetriever.create(config);
         servingService = new HistoricalServingService(bqRetriever, specService, jobService);
+        break;
+      case BIGTABLE:
+        OnlineRetriever bigtableRetriever = BigtableOnlineRetriever.create(config);
+        servingService = new OnlineServingService(bigtableRetriever, specService, tracer);
         break;
       case CASSANDRA:
       case UNRECOGNIZED:

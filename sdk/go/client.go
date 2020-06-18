@@ -52,16 +52,16 @@ func (fc *GrpcClient) GetOnlineFeatures(ctx context.Context, req *OnlineFeatures
 	resp, err := fc.cli.GetOnlineFeatures(ctx, featuresRequest)
 
 	// collect unqiue entity refs from entity rows
-	var entityRefs map[string]struct{}
+	entityRefs := make(map[string]struct{})
 	for _, entityRows := range req.Entities {
-		for ref, _ := range entityRows {
+		for ref := range entityRows {
 			entityRefs[ref] = struct{}{}
 		}
 	}
 
 	// strip projects from to projects
 	for _, fieldValue := range resp.GetFieldValues() {
-		var stripFields map[string]*types.Value
+		stripFields := make(map[string]*types.Value)
 		for refStr, value := range fieldValue.Fields {
 			_, isEntity := entityRefs[refStr]
 			if !isEntity { // is feature ref
@@ -69,9 +69,9 @@ func (fc *GrpcClient) GetOnlineFeatures(ctx context.Context, req *OnlineFeatures
 				if err != nil {
 					return nil, err
 				}
-				stripRefStr := toFeatureRefStr(featureRef)
-				stripFields[stripRefStr] = value
+				refStr = toFeatureRefStr(featureRef)
 			}
+			stripFields[refStr] = value
 		}
 		fieldValue.Fields = stripFields
 	}
