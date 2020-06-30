@@ -390,10 +390,14 @@ class Client:
 
         # Convert the feature set to a request and send to Feast Core
         try:
+            md = self._get_grpc_metadata()
+            print(md)
+            req = ApplyFeatureSetRequest(feature_set=feature_set_proto)
+            print(req)
             apply_fs_response = self._core_service.ApplyFeatureSet(
-                ApplyFeatureSetRequest(feature_set=feature_set_proto),
-                timeout=self._config.getint(CONFIG_GRPC_CONNECTION_TIMEOUT_DEFAULT_KEY),
-                metadata=self._get_grpc_metadata(),
+                req,
+                timeout=5,
+                metadata=md,
             )  # type: ApplyFeatureSetResponse
         except grpc.RpcError as e:
             raise grpc.RpcError(e.details())
