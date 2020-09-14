@@ -100,6 +100,12 @@ public class BigtableOnlineRetriever implements OnlineRetriever {
           .withCause(e)
           .asRuntimeException();
     }
+    if (entityRows.size() != featureRows.size()) {
+      System.out.println(
+          String.format(
+              "Getting features for %s entity rows, but only found %s",
+              entityRows.size(), featureRows.size()));
+    }
     return featureRows;
   }
 
@@ -108,13 +114,13 @@ public class BigtableOnlineRetriever implements OnlineRetriever {
       ImmutableList<FeatureReference> featureReferences,
       FeatureRowDecoder decoder)
       throws InvalidProtocolBufferException, ExecutionException {
-    // pull feature row data bytes from redis using given redis keys
     ServerStream<Row> featureRowsStream = sendMultiGet(bigtableKeys, featureReferences);
     List<Optional<FeatureRow>> featureRows = new ArrayList<>();
+    HashMap<String, Optional<FeatureRow>> featureRowMap = new HashMap<>();
     for (Row featureRow : featureRowsStream) {
       try {
         FeatureRow decodedFeatureRow = decoder.decode(featureRow);
-        featureRows.add(Optional.of(decodedFeatureRow));
+        featureRowMap.put(featureRow.getKey().toStringUtf8(), Optional.of(decodedFeatureRow));
       } catch (Exception e) {
         // decoding feature row failed: data corruption could have occurred
         e.printStackTrace();
@@ -124,6 +130,13 @@ public class BigtableOnlineRetriever implements OnlineRetriever {
                 "Failed to decode FeatureRow from Row received from bigtable"
                     + ": Possible data corruption")
             .asRuntimeException();
+      }
+    }
+    for (String key : bigtableKeys) {
+      if (featureRowMap.containsKey(key)) {
+        featureRows.add(featureRowMap.get(key));
+      } else {
+        featureRows.add(Optional.of(FeatureRow.newBuilder().build()));
       }
     }
     return featureRows;
