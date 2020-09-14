@@ -80,36 +80,36 @@
           </execution>
         </executions>
       </plugin>
-
+      
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-enforcer-plugin</artifactId>
-        <executions>
-          <!--
-            We want to keep Ingestion compatible with Java 8 runtime for Beam runners, #518.
-            Unfortunately this doesn't seem to work on Reactor modules, though:
-            https://github.com/mojohaus/mojo-parent/issues/85
-            -->
-          <execution>
-            <id>enforce-bytecode-version</id>
-            <goals>
-              <goal>enforce</goal>
-            </goals>
-            <configuration>
-              <rules>
-                <enforceBytecodeVersion>
-                  <maxJdkVersion>1.8</maxJdkVersion>
-                </enforceBytecodeVersion>
-              </rules>
-            </configuration>
-          </execution>
+           <artifactId>maven-enforcer-plugin</artifactId>
+            <executions>
+              <!--
+              We want to keep Ingestion compatible with Java 8 runtime for Beam runners, #518.
+              Unfortunately this doesn't seem to work on Reactor modules, though:
+              https://github.com/mojohaus/mojo-parent/issues/85
+              -->
+            <execution>
+                <id>enforce-bytecode-version</id>
+                <goals>
+                    <goal>enforce</goal>
+                </goals>
+                <configuration>
+                    <rules>
+                        <enforceBytecodeVersion>
+                            <maxJdkVersion>1.8</maxJdkVersion>
+                        </enforceBytecodeVersion>
+                    </rules>
+                </configuration>
+             </execution>
         </executions>
-      </plugin>
+    </plugin>
 
-      <plugin>
+     <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
-      </plugin>
+     </plugin>
     </plugins>
   </build>
 
@@ -140,10 +140,16 @@
 
     <dependency>
       <groupId>dev.feast</groupId>
-      <artifactId>feast-common</artifactId>
+      <artifactId>feast-storage-connector-bigtable</artifactId>
       <version>${project.version}</version>
     </dependency>
 
+    <dependency>
+      <groupId>dev.feast</groupId>
+      <artifactId>feast-common</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    
     <dependency>
       <groupId>dev.feast</groupId>
       <artifactId>feast-common-test</artifactId>

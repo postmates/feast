@@ -284,7 +284,6 @@
             <version>2.2.0</version>
             <scope>test</scope>
         </dependency>
-
         <dependency>
             <groupId>javax.xml.bind</groupId>
             <artifactId>jaxb-api</artifactId>

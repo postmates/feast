@@ -8,15 +8,16 @@
     </parent>
 
     <modelVersion>4.0.0</modelVersion>
-    <artifactId>feast-storage-connector-bigquery</artifactId>
+    <artifactId>feast-storage-connector-bigtable</artifactId>
 
-    <name>Feast Storage Connector for BigQuery</name>
+    <name>Feast Storage Connector for Bigtable</name>
 
     <dependencies>
+        <!-- https://mvnrepository.com/artifact/com.google.cloud.bigtable/bigtable-hbase-beam -->
         <dependency>
-            <groupId>io.pebbletemplates</groupId>
-            <artifactId>pebble</artifactId>
-            <version>3.1.0</version>
+            <groupId>com.google.cloud.bigtable</groupId>
+            <artifactId>bigtable-hbase-beam</artifactId>
+            <version>1.13.0</version>
             <exclusions>
                 <exclusion>
                     <groupId>org.slf4j</groupId>
@@ -29,37 +30,16 @@
             </exclusions>
         </dependency>
 
-        <!-- Google Cloud -->
         <dependency>
             <groupId>com.google.cloud</groupId>
-            <artifactId>google-cloud-bigquery</artifactId>
+            <artifactId>google-cloud-bigtable-emulator</artifactId>
+            <version>0.122.0</version>
         </dependency>
 
         <dependency>
-            <groupId>com.google.cloud</groupId>
-            <artifactId>google-cloud-storage</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.beam</groupId>
-            <artifactId>beam-sdks-java-io-google-cloud-platform</artifactId>
-            <version>${org.apache.beam.version}</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>com.google.cloud</groupId>
-                    <artifactId>google-cloud-spanner</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>com.google.cloud.bigtable</groupId>
-                    <artifactId>bigtable-client-core</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
-        <dependency>
-            <groupId>io.opencensus</groupId>
-            <artifactId>opencensus-contrib-http-util</artifactId>
-            <version>0.21.0</version>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>3.9</version>
         </dependency>
 
         <dependency>
@@ -69,16 +49,16 @@
         </dependency>
 
         <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>4.12</version>
-            <scope>test</scope>
+            <groupId>com.google.auto.value</groupId>
+            <artifactId>auto-value</artifactId>
+            <version>1.6.6</version>
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-simple</artifactId>
-            <version>1.7.30</version>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>2.23.0</version>
             <scope>test</scope>
         </dependency>
 
@@ -94,16 +74,25 @@
             <artifactId>hamcrest-core</artifactId>
             <scope>test</scope>
         </dependency>
+
         <dependency>
             <groupId>org.hamcrest</groupId>
             <artifactId>hamcrest-library</artifactId>
             <scope>test</scope>
         </dependency>
+
+
         <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
-            <version>${mockito.version}</version>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.12</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.google.cloud.bigtable</groupId>
+            <artifactId>bigtable-hbase-1.x-shaded</artifactId>
+            <version>1.13.0</version>
+        </dependency>
     </dependencies>
+
 </project>
